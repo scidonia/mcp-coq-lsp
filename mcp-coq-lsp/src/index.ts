@@ -22,6 +22,37 @@ import type {
   GoalConfig,
   RunOpts,
 } from './types.js';
+import { resolve as resolvePath } from 'path';
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function retryDocumentNotReady<T>(
+  action: () => Promise<T>,
+  opts?: { timeoutMs?: number; initialDelayMs?: number; maxDelayMs?: number }
+): Promise<T> {
+  const timeoutMs = opts?.timeoutMs ?? 10_000;
+  let delayMs = opts?.initialDelayMs ?? 50;
+  const maxDelayMs = opts?.maxDelayMs ?? 500;
+  const start = Date.now();
+
+  for (;;) {
+    try {
+      return await action();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      const isNotReady = message.includes('Document is not ready');
+
+      if (!isNotReady || Date.now() - start > timeoutMs) {
+        throw err;
+      }
+
+      await sleep(delayMs);
+      delayMs = Math.min(Math.floor(delayMs * 1.5), maxDelayMs);
+    }
+  }
+}
 
 // Parse command-line arguments for configuration
 function parseArgs() {
@@ -42,6 +73,10 @@ function parseArgs() {
     }
   }
 
+  if (config.workspaceRoot) {
+    config.workspaceRoot = resolvePath(config.workspaceRoot);
+  }
+
   return config;
 }
 
@@ -53,7 +88,7 @@ async function main() {
     rocqLspPath: config.rocqLspPath,
     rocqLspArgs: config.rocqLspArgs,
     workspaceRoot: config.workspaceRoot,
-    checkOnlyOnRequest: true,
+    checkOnlyOnRequest: false,
     ppType: 0, // String output
     goalAfterTactic: true,
   });
@@ -292,9 +327,8 @@ async function main() {
           const doc = await docManager.openDocument(file);
 
           // Send proof/goals request
-          const result = await lspClient.sendRequest<GoalAnswer<string>>(
-            'proof/goals',
-            {
+          const result = await retryDocumentNotReady(() =>
+            lspClient.sendRequest<GoalAnswer<string>>('proof/goals', {
               textDocument: {
                 uri: doc.uri,
                 version: doc.version,
@@ -303,7 +337,7 @@ async function main() {
               pp_format: pp_format || 'Str',
               compact: compact ?? true,
               mode: mode || 'After',
-            }
+            })
           );
 
           return {
@@ -324,13 +358,12 @@ async function main() {
 
           // Get goals
           const doc = await docManager.openDocument(file);
-          const goalsResult = await lspClient.sendRequest<GoalAnswer<string>>(
-            'proof/goals',
-            {
+          const goalsResult = await retryDocumentNotReady(() =>
+            lspClient.sendRequest<GoalAnswer<string>>('proof/goals', {
               textDocument: { uri: doc.uri, version: doc.version },
               position,
               pp_format: 'Str',
-            }
+            })
           );
 
           // Get proof info
@@ -562,17 +595,19 @@ async function main() {
 
           const doc = await docManager.openDocument(file);
 
-          const result = await lspClient.sendRequest<{
-            spans: Array<{ range: Range }>;
-            completed: { status: string; range: Range };
-          }>('coq/getDocument', {
-            textDocument: {
-              uri: doc.uri,
-              version: doc.version,
-            },
-            ast: false,
-            goals: 'Str',
-          });
+          const result = await retryDocumentNotReady(() =>
+            lspClient.sendRequest<{
+              spans: Array<{ range: Range }>;
+              completed: { status: string; range: Range };
+            }>('coq/getDocument', {
+              textDocument: {
+                uri: doc.uri,
+                version: doc.version,
+              },
+              ast: false,
+              goals: 'Str',
+            })
+          );
 
           return {
             content: [

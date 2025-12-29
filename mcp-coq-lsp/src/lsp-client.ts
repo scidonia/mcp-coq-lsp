@@ -3,6 +3,8 @@
  */
 
 import { spawn, ChildProcessWithoutNullStreams } from 'child_process';
+import { resolve as resolvePath } from 'path';
+import { pathToFileURL } from 'url';
 import {
   createMessageConnection,
   MessageConnection,
@@ -25,7 +27,7 @@ export class RocqLspClient {
     this.config = {
       rocqLspPath: config.rocqLspPath || 'coq-lsp',
       rocqLspArgs: config.rocqLspArgs || [],
-      workspaceRoot: config.workspaceRoot || process.cwd(),
+      workspaceRoot: resolvePath(config.workspaceRoot || process.cwd()),
       checkOnlyOnRequest: config.checkOnlyOnRequest ?? true,
       ppType: config.ppType ?? 0,
       goalAfterTactic: config.goalAfterTactic ?? true,
@@ -40,6 +42,8 @@ export class RocqLspClient {
     // Spawn rocq-lsp process
     this.process = spawn(this.config.rocqLspPath, this.config.rocqLspArgs, {
       stdio: ['pipe', 'pipe', 'pipe'],
+      cwd: this.config.workspaceRoot,
+      env: process.env,
     });
 
     // Setup message connection
@@ -57,7 +61,7 @@ export class RocqLspClient {
     });
 
     this.process.on('exit', (code) => {
-      console.log(`[rocq-lsp exited with code ${code}]`);
+      console.error(`[rocq-lsp exited with code ${code}]`);
       this.connection = null;
       this.process = null;
     });
@@ -74,9 +78,11 @@ export class RocqLspClient {
       throw new Error('Connection not established');
     }
 
+    const rootUri = pathToFileURL(this.config.workspaceRoot).toString();
+
     const initParams: InitializeParams = {
       processId: process.pid,
-      rootUri: `file://${this.config.workspaceRoot}`,
+      rootUri,
       capabilities: {
         textDocument: {
           synchronization: {
@@ -89,7 +95,7 @@ export class RocqLspClient {
       },
       workspaceFolders: [
         {
-          uri: `file://${this.config.workspaceRoot}`,
+          uri: rootUri,
           name: 'workspace',
         },
       ],
@@ -105,7 +111,7 @@ export class RocqLspClient {
       initParams
     );
 
-    console.log('[LSP initialized]:', result.serverInfo);
+    console.error('[LSP initialized]:', result.serverInfo);
 
     // Send initialized notification
     await this.connection.sendNotification('initialized', {});

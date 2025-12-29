@@ -4,6 +4,7 @@
 
 import { promises as fs } from 'fs';
 import { resolve } from 'path';
+import { pathToFileURL } from 'url';
 import type { RocqLspClient } from './lsp-client.js';
 
 interface DocumentState {
@@ -29,17 +30,17 @@ export class DocumentManager {
    */
   pathToUri(path: string): string {
     const absPath = resolve(this.workspaceRoot, path);
-    return `file://${absPath}`;
+    return pathToFileURL(absPath).toString();
   }
 
   /**
    * Determine languageId from file extension
    */
   private getLanguageId(path: string): string {
-    if (path.endsWith('.v')) return 'rocq';
+    if (path.endsWith('.v')) return 'coq';
     if (path.endsWith('.mv')) return 'markdown';
     if (path.endsWith('.lv') || path.endsWith('.v.tex')) return 'latex';
-    return 'rocq'; // default
+    return 'coq'; // default
   }
 
   /**
