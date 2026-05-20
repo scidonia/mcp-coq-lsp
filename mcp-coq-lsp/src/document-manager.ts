@@ -66,9 +66,10 @@ export class DocumentManager {
       text,
     };
 
-    this.documents.set(uri, doc);
+    // Wait for LSP client to be ready (e.g., during workspace switch restart)
+    await this.lspClient.waitUntilReady(20000);
 
-    // Notify rocq-lsp
+    // Notify rocq-lsp — only cache after successful open
     await this.lspClient.sendNotification('textDocument/didOpen', {
       textDocument: {
         uri,
@@ -77,6 +78,8 @@ export class DocumentManager {
         text,
       },
     });
+
+    this.documents.set(uri, doc);
 
     return doc;
   }
@@ -149,6 +152,13 @@ export class DocumentManager {
     });
 
     this.documents.delete(uri);
+  }
+
+  /**
+   * Clear all cached documents (use after LSP restart)
+   */
+  clear(): void {
+    this.documents.clear();
   }
 
   /**

@@ -13,7 +13,7 @@ import {
 
 import { RocqLspClient } from './lsp-client.js';
 import { DocumentManager } from './document-manager.js';
-import { detectProjectConfig, mergeProjectArgs } from './project-config.js';
+import { detectProjectConfig, mergeProjectArgs, findProjectRoot } from './project-config.js';
 import type {
   Position,
   Range,
@@ -23,6 +23,7 @@ import type {
   GoalConfig,
   RunOpts,
 } from './types.js';
+import * as fs from 'fs';
 import { resolve as resolvePath } from 'path';
 
 function sleep(ms: number): Promise<void> {
@@ -33,7 +34,7 @@ async function retryDocumentNotReady<T>(
   action: () => Promise<T>,
   opts?: { timeoutMs?: number; initialDelayMs?: number; maxDelayMs?: number }
 ): Promise<T> {
-  const timeoutMs = opts?.timeoutMs ?? 10_000;
+  const timeoutMs = opts?.timeoutMs ?? 30_000;
   let delayMs = opts?.initialDelayMs ?? 50;
   const maxDelayMs = opts?.maxDelayMs ?? 500;
   const start = Date.now();
@@ -100,11 +101,86 @@ async function main() {
     console.error('[mcp-coq-lsp] coq-lsp may not be able to resolve imports correctly.');
   }
 
-  // Use user-provided args (coq-lsp doesn't accept -Q/-R as CLI args, it reads _CoqProject)
-  // User can still pass other coq-lsp-specific args if needed
-  const finalRocqLspArgs = config.rocqLspArgs || [];
+  // Base user-provided args
+  const baseRocqLspArgs = config.rocqLspArgs || [];
+  let finalRocqLspArgs = [...baseRocqLspArgs];
 
   console.error('[mcp-coq-lsp] coq-lsp args:', finalRocqLspArgs);
+
+  /**
+   * Compute coq-lsp CLI args for a given workspace root.
+   * Maps the coq/ source directory (if it exists) to the root logical path
+   * so that bare imports like `Require Import Wp` resolve correctly.
+   */
+  function computeRocqLspArgs(root: string): string[] {
+    const args = [...baseRocqLspArgs];
+    try {
+      const srcDir = resolvePath(root, 'coq');
+      if (fs.existsSync(srcDir)) {
+        args.push('-R', `${srcDir},`);
+      }
+    } catch {}
+    return args;
+  }
+
+  // Initialize with initial workspace root
+  finalRocqLspArgs = computeRocqLspArgs(workspaceRoot);
+
+  // Track the active project root for dynamic workspace switching
+  let activeWorkspaceRoot = workspaceRoot;
+
+  /**
+   * Open a document, first detecting and switching to its project root if needed.
+   * This allows files from different Coq projects to be opened without restarting
+   * the MCP server.
+   */
+  async function ensureDocumentOpened(path: string) {
+    const absPath = resolvePath(path);
+    const projectRoot = findProjectRoot(absPath);
+
+    if (projectRoot && resolvePath(projectRoot) !== resolvePath(activeWorkspaceRoot)) {
+      console.error('[mcp-coq-lsp] Switching workspace root:',
+        activeWorkspaceRoot, '->', projectRoot);
+
+      activeWorkspaceRoot = projectRoot;
+      docManager.clear();
+
+      // Do NOT await the full restart — fire it and let the caller retry.
+      // The MCP client has a tighter timeout than the LSP cold-start needs.
+      lspClient.restart({
+        workspaceRoot: projectRoot,
+        rocqLspArgs: computeRocqLspArgs(projectRoot),
+      }).then(() => {
+        console.error('[mcp-coq-lsp] Workspace switch complete');
+      }).catch(err => {
+        console.error('[mcp-coq-lsp] Workspace switch failed:', err);
+      });
+
+      const e = new Error('Switching workspace to ' + projectRoot + ' — please retry');
+      (e as any).retryAfter = 5000;
+      throw e;
+    }
+
+    try {
+      return await docManager.openDocument(path);
+    } catch (err: any) {
+      if (err?.message === 'LSP client not started') {
+        // LSP isn't running — try to start it
+        lspClient.restart({
+          workspaceRoot: activeWorkspaceRoot,
+          rocqLspArgs: computeRocqLspArgs(activeWorkspaceRoot),
+        }).then(() => {
+          console.error('[mcp-coq-lsp] Auto-restart complete');
+        }).catch(err => {
+          console.error('[mcp-coq-lsp] Auto-restart failed:', err);
+        });
+        const e = new Error('LSP client not started — please retry');
+        (e as any).retryAfter = 5000;
+        throw e;
+      }
+      throw err;
+    }
+  }
 
   // Create LSP client and document manager
   const lspClient = new RocqLspClient({
@@ -317,6 +393,101 @@ async function main() {
           },
         },
         {
+          name: 'coq_search',
+          description:
+            'Search for lemmas/theorems without polluting the source file. Runs `Search <pattern>.` speculatively and returns results.',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              file: {
+                type: 'string',
+                description: 'Path to a .v file (used to obtain a proof state)',
+              },
+              pattern: {
+                type: 'string',
+                description: 'Search pattern for lemmas/theorems',
+              },
+            },
+            required: ['file', 'pattern'],
+          },
+        },
+        {
+          name: 'coq_check_term',
+          description:
+            'Check the type of a term speculatively. Runs `Check <term>.` and returns the result.',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              file: {
+                type: 'string',
+                description: 'Path to a .v file (used to obtain a proof state)',
+              },
+              term: {
+                type: 'string',
+                description: 'Term to check the type of',
+              },
+            },
+            required: ['file', 'term'],
+          },
+        },
+        {
+          name: 'coq_about',
+          description:
+            'Get information about a term/definition speculatively. Runs `About <term>.` and returns the result.',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              file: {
+                type: 'string',
+                description: 'Path to a .v file (used to obtain a proof state)',
+              },
+              term: {
+                type: 'string',
+                description: 'Term to get information about',
+              },
+            },
+            required: ['file', 'term'],
+          },
+        },
+        {
+          name: 'coq_undo',
+          description:
+            'Remove the last N tactics from the file and re-sync with rocq-lsp.',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              file: { type: 'string' },
+              n: {
+                type: 'number',
+                description: 'Number of tactics to undo (default: 1)',
+              },
+            },
+            required: ['file'],
+          },
+        },
+        {
+          name: 'coq_try_tactic',
+          description:
+            'Single-call speculative tactic execution: get state, run tactic, and return updated goals.',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              file: { type: 'string' },
+              position: {
+                type: 'object',
+                properties: {
+                  line: { type: 'number' },
+                  character: { type: 'number' },
+                },
+                required: ['line', 'character'],
+              },
+              tactic: { type: 'string', description: 'Tactic to run speculatively' },
+              compact: { type: 'boolean', description: 'Use compact hypothesis display' },
+            },
+            required: ['file', 'position', 'tactic'],
+          },
+        },
+        {
           name: 'coq_check',
           description: 'Force document checking and return completion status',
           inputSchema: {
@@ -381,7 +552,7 @@ async function main() {
           };
 
           // Ensure document is open
-          const doc = await docManager.openDocument(file);
+          const doc = await ensureDocumentOpened(file);
 
           // Send proof/goals request
           const result = await retryDocumentNotReady(() =>
@@ -414,7 +585,7 @@ async function main() {
           };
 
           // Get goals
-          const doc = await docManager.openDocument(file);
+          const doc = await ensureDocumentOpened(file);
           const goalsResult = await retryDocumentNotReady(() =>
             lspClient.sendRequest<GoalAnswer<string>>('proof/goals', {
               textDocument: { uri: doc.uri, version: doc.version },
@@ -464,7 +635,7 @@ async function main() {
             hash?: boolean;
           };
 
-          const doc = await docManager.openDocument(file);
+          const doc = await ensureDocumentOpened(file);
 
           const result = await lspClient.sendRequest<RunResult<number>>(
             'petanque/get_state_at_pos',
@@ -551,7 +722,7 @@ async function main() {
           // Get current document
           let doc = docManager.getDocument(file);
           if (!doc) {
-            doc = await docManager.openDocument(file);
+            doc = await ensureDocumentOpened(file);
           }
 
           // Apply edits
@@ -591,7 +762,7 @@ async function main() {
           // Insert tactic at position
           const insertText = tactic.endsWith('\n') ? tactic : `${tactic}\n`;
 
-          await docManager.openDocument(file);
+          await ensureDocumentOpened(file);
 
           // Apply edit
           const doc = docManager.getDocument(file)!;
@@ -612,6 +783,13 @@ async function main() {
           if (follow_with_goals ?? true) {
             const updatedDoc = docManager.getDocument(file)!;
             try {
+              const insertLines = insertText.split('\n');
+              let lastLineIdx = insertLines.length - 1;
+              if (insertLines[lastLineIdx] === '' && lastLineIdx > 0) lastLineIdx--;
+              const afterPosition: Position = {
+                line: position.line + lastLineIdx,
+                character: insertLines[lastLineIdx].length,
+              };
               const goalsResult = await lspClient.sendRequest<
                 GoalAnswer<string>
               >('proof/goals', {
@@ -619,7 +797,7 @@ async function main() {
                   uri: updatedDoc.uri,
                   version: updatedDoc.version,
                 },
-                position,
+                position: afterPosition,
                 pp_format: 'Str',
               });
               goals = goalsResult;
@@ -651,7 +829,7 @@ async function main() {
           const { file } = args as { file: string };
 
           try {
-            const doc = await docManager.openDocument(file);
+            const doc = await ensureDocumentOpened(file);
 
             const result = await retryDocumentNotReady(() =>
               lspClient.sendRequest<{
@@ -714,7 +892,7 @@ async function main() {
           };
 
           try {
-            const doc = await docManager.openDocument(file);
+            const doc = await ensureDocumentOpened(file);
 
             // Get the full document info first
             const result = await retryDocumentNotReady(() =>
@@ -784,6 +962,292 @@ async function main() {
               isError: true,
             };
           }
+        }
+
+        case 'coq_search': {
+          const { file, pattern } = args as {
+            file: string;
+            pattern: string;
+          };
+
+          const doc = await ensureDocumentOpened(file);
+
+          const docInfo = await retryDocumentNotReady(() =>
+            lspClient.sendRequest<{
+              spans: Array<{ range: Range }>;
+            }>('coq/getDocument', {
+              textDocument: { uri: doc.uri, version: doc.version },
+              ast: false,
+            })
+          );
+
+          const targetPos: Position =
+            (docInfo.spans && docInfo.spans.length > 0)
+              ? docInfo.spans[0].range.start
+              : { line: 0, character: 0 };
+
+          const stateResult = await retryDocumentNotReady(() =>
+            lspClient.sendRequest<RunResult<number>>('petanque/get_state_at_pos', {
+              uri: doc.uri,
+              position: targetPos,
+              opts: { memo: true, hash: true },
+            })
+          );
+
+          const runResult = await lspClient.sendRequest<RunResult<number>>('petanque/run', {
+            st: stateResult.st,
+            tac: `Search ${pattern}.`,
+            opts: { memo: false, hash: false },
+          });
+
+          return {
+            content: [
+              {
+                type: 'text',
+                text: JSON.stringify(
+                  {
+                    messages: runResult.feedback.map(([level, msg]) => ({
+                      level,
+                      message: msg,
+                    })),
+                  },
+                  null,
+                  2
+                ),
+              },
+            ],
+          };
+        }
+
+        case 'coq_check_term': {
+          const { file, term } = args as {
+            file: string;
+            term: string;
+          };
+
+          const doc3 = await ensureDocumentOpened(file);
+
+          const docInfo3 = await retryDocumentNotReady(() =>
+            lspClient.sendRequest<{
+              spans: Array<{ range: Range }>;
+            }>('coq/getDocument', {
+              textDocument: { uri: doc3.uri, version: doc3.version },
+              ast: false,
+            })
+          );
+
+          const targetPos3: Position =
+            (docInfo3.spans && docInfo3.spans.length > 0)
+              ? docInfo3.spans[0].range.start
+              : { line: 0, character: 0 };
+
+          const stateResult3 = await retryDocumentNotReady(() =>
+            lspClient.sendRequest<RunResult<number>>('petanque/get_state_at_pos', {
+              uri: doc3.uri,
+              position: targetPos3,
+              opts: { memo: true, hash: true },
+            })
+          );
+
+          const runResult3 = await lspClient.sendRequest<RunResult<number>>('petanque/run', {
+            st: stateResult3.st,
+            tac: `Check ${term}.`,
+            opts: { memo: false, hash: false },
+          });
+
+          return {
+            content: [
+              {
+                type: 'text',
+                text: JSON.stringify(
+                  {
+                    messages: runResult3.feedback.map(([level, msg]) => ({
+                      level,
+                      message: msg,
+                    })),
+                  },
+                  null,
+                  2
+                ),
+              },
+            ],
+          };
+        }
+
+        case 'coq_about': {
+          const { file, term } = args as {
+            file: string;
+            term: string;
+          };
+
+          const doc4 = await ensureDocumentOpened(file);
+
+          const docInfo4 = await retryDocumentNotReady(() =>
+            lspClient.sendRequest<{
+              spans: Array<{ range: Range }>;
+            }>('coq/getDocument', {
+              textDocument: { uri: doc4.uri, version: doc4.version },
+              ast: false,
+            })
+          );
+
+          const targetPos4: Position =
+            (docInfo4.spans && docInfo4.spans.length > 0)
+              ? docInfo4.spans[0].range.start
+              : { line: 0, character: 0 };
+
+          const stateResult4 = await retryDocumentNotReady(() =>
+            lspClient.sendRequest<RunResult<number>>('petanque/get_state_at_pos', {
+              uri: doc4.uri,
+              position: targetPos4,
+              opts: { memo: true, hash: true },
+            })
+          );
+
+          const runResult4 = await lspClient.sendRequest<RunResult<number>>('petanque/run', {
+            st: stateResult4.st,
+            tac: `About ${term}.`,
+            opts: { memo: false, hash: false },
+          });
+
+          return {
+            content: [
+              {
+                type: 'text',
+                text: JSON.stringify(
+                  {
+                    messages: runResult4.feedback.map(([level, msg]) => ({
+                      level,
+                      message: msg,
+                    })),
+                  },
+                  null,
+                  2
+                ),
+              },
+            ],
+          };
+        }
+
+        case 'coq_undo': {
+          const { file, n } = args as {
+            file: string;
+            n?: number;
+          };
+
+          const count = n ?? 1;
+
+          const doc = await ensureDocumentOpened(file);
+
+          const result = await retryDocumentNotReady(() =>
+            lspClient.sendRequest<{
+              spans: Array<{ range: Range }>;
+              completed: { status: string; range: Range };
+            }>('coq/getDocument', {
+              textDocument: {
+                uri: doc.uri,
+                version: doc.version,
+              },
+              ast: false,
+            })
+          );
+
+          const spans = result.spans || [];
+          if (spans.length < count) {
+            throw new Error(
+              `Cannot undo ${count}: only ${spans.length} span(s) available`
+            );
+          }
+
+          const sortedSpans = [...spans].sort((a, b) => {
+            if (a.range.start.line !== b.range.start.line) {
+              return a.range.start.line - b.range.start.line;
+            }
+            return a.range.start.character - b.range.start.character;
+          });
+
+          const firstUndone = sortedSpans[sortedSpans.length - count];
+          const lastUndone = sortedSpans[sortedSpans.length - 1];
+
+          const newText = docManager.applyEdits(doc.text, [
+            {
+              range: {
+                start: firstUndone.range.start,
+                end: lastUndone.range.end,
+              },
+              newText: '',
+            },
+          ]);
+
+          await docManager.updateDocument(file, newText);
+          await docManager.saveDocument(file);
+
+          return {
+            content: [
+              {
+                type: 'text',
+                text: JSON.stringify(
+                  {
+                    applied: true,
+                    removed_spans: count,
+                  },
+                  null,
+                  2
+                ),
+              },
+            ],
+          };
+        }
+
+        case 'coq_try_tactic': {
+          const { file, position, tactic, compact } = args as {
+            file: string;
+            position: Position;
+            tactic: string;
+            compact?: boolean;
+          };
+
+          const doc = await ensureDocumentOpened(file);
+
+          const stateResult = await retryDocumentNotReady(() =>
+            lspClient.sendRequest<RunResult<number>>('petanque/get_state_at_pos', {
+              uri: doc.uri,
+              position,
+              opts: { memo: true, hash: true },
+            })
+          );
+
+          const runResult = await lspClient.sendRequest<RunResult<number>>('petanque/run', {
+            st: stateResult.st,
+            tac: tactic,
+            opts: { memo: true, hash: true },
+          });
+
+          const goalsResult = await lspClient.sendRequest<GoalConfig<string>>(
+            'petanque/goals',
+            {
+              st: runResult.st,
+              opts: { compact: compact ?? true },
+            }
+          );
+
+          return {
+            content: [
+              {
+                type: 'text',
+                text: JSON.stringify(
+                  {
+                    state_id: runResult.st,
+                    proof_finished: runResult.proof_finished,
+                    goals: goalsResult,
+                    feedback: runResult.feedback,
+                  },
+                  null,
+                  2
+                ),
+              },
+            ],
+          };
         }
 
         default:

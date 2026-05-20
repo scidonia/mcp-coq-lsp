@@ -3,7 +3,7 @@
  */
 
 import { readFileSync, existsSync, readdirSync, statSync } from 'fs';
-import { join, resolve } from 'path';
+import { join, resolve, dirname } from 'path';
 
 export interface ProjectConfig {
   loadPaths: string[];  // Array of -Q and -R arguments (e.g., ['-Q', 'theories', 'Cyclic'])
@@ -148,6 +148,40 @@ function inferLoadPathsFromDune(workspaceRoot: string): string[] {
   }
 
   return args;
+}
+
+/**
+ * Walk up from a file's directory looking for a Coq project root.
+ * Returns the directory containing _CoqProject, _RocqProject, or dune-project,
+ * or null if no project marker is found.
+ */
+export function findProjectRoot(filePath: string): string | null {
+  let dir = resolve(filePath);
+
+  try {
+    const s = statSync(dir);
+    if (s.isFile()) {
+      dir = dirname(dir);
+    }
+  } catch {
+    return null;
+  }
+
+  const markers = ['_CoqProject', '_RocqProject', 'dune-project'];
+
+  for (;;) {
+    for (const marker of markers) {
+      if (existsSync(join(dir, marker))) {
+        console.error('[project-config] Found project root:', dir, '(via', marker + ')');
+        return dir;
+      }
+    }
+    const parent = dirname(dir);
+    if (parent === dir) {
+      return null;
+    }
+    dir = parent;
+  }
 }
 
 /**
