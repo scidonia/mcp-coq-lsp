@@ -543,8 +543,7 @@ async function main() {
     function reply(summary: string, data: unknown) {
       return {
         content: [
-          { type: 'text' as const, text: summary },
-          { type: 'text' as const, text: JSON.stringify(data, null, 2) },
+          { type: 'text' as const, text: summary + '\n' + JSON.stringify(data, null, 2) },
         ],
       };
     }
@@ -552,8 +551,7 @@ async function main() {
     function err(summary: string, detail?: string) {
       return {
         content: [
-          { type: 'text' as const, text: summary },
-          { type: 'text' as const, text: JSON.stringify({ error: summary, detail: detail ?? summary }, null, 2) },
+          { type: 'text' as const, text: summary + '\n' + JSON.stringify({ error: summary, detail: detail ?? summary }, null, 2) },
         ],
         isError: true,
       };
