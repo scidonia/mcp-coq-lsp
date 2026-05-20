@@ -590,7 +590,10 @@ async function main() {
       }
       return gl.map((g: any, i: number) => {
         const idx = n > 1 ? `Goal ${i + 1}: ` : '';
-        const hyps = (g.hyps || []).map((h: any) => `  ${h.name}: ${h.ty || h.type}`).join('\n');
+        const hyps = (g.hyps || []).map((h: any) => {
+          const name = h.names ? h.names.join(', ') : (h.name || '?');
+          return `  ${name}: ${h.ty || h.type}`;
+        }).join('\n');
         return idx + '⊢ ' + g.ty + (hyps ? '\n' + hyps : '');
       }).join('\n\n');
     }
