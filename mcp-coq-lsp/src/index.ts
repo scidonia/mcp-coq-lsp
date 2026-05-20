@@ -543,19 +543,21 @@ async function main() {
     function formatSemi(data: unknown, indent = 0): string {
       const pad = '  '.repeat(indent);
       if (data === null || data === undefined) return pad + 'null';
-      if (typeof data === 'string') return pad + data;
+      if (typeof data === 'string') return data;
       if (typeof data === 'number' || typeof data === 'boolean') return pad + String(data);
       if (Array.isArray(data)) {
-        if (data.length === 0) return pad + '[]';
-        return data.map((v, i) => pad + `[${i}]:` + '\n' + formatSemi(v, indent + 1).replace(/^\s+/, '')).join('\n');
+        if (data.length === 0) return '[]';
+        const allSimple = data.every(v => typeof v !== 'object' || v === null);
+        if (allSimple) return data.map((v, i) => `[${i}]: ${formatSemi(v, 0)}`).join(', ');
+        return data.map((v, i) => `[${i}]:\n${formatSemi(v, indent + 1)}`).join('\n');
       }
       if (typeof data === 'object') {
         const entries = Object.entries(data as Record<string, unknown>);
-        if (entries.length === 0) return pad + '{}';
+        if (entries.length === 0) return '{}';
         return entries.map(([k, v]) => {
           if (v === null || v === undefined) return pad + k + ': null';
           if (typeof v === 'object') return pad + k + ':\n' + formatSemi(v, indent + 1);
-          return pad + `${k}: ${v}`;
+          return pad + `${k}: ${formatSemi(v, 0)}`;
         }).join('\n');
       }
       return pad + String(data);
@@ -578,11 +580,26 @@ async function main() {
       };
     }
 
-    function goalSummary(g: any, i: number): string {
-      let h = g.hyps?.length
-        ? g.hyps.map((h: any) => h.name + ': ' + (h.ty || h.type)).join(', ')
-        : 'no hypotheses';
-      return `  Goal ${i + 1} [${h}]\n  ⊢ ${g.ty}`;
+    function formatGoals(goals: any): string {
+      const gl = goals?.goals || [];
+      const n = gl.length;
+      if (n === 0) {
+        const prog = goals?.program?.length || 0;
+        const msgs = (goals?.messages || []).filter((m: any) => m.level === 1).map((m: any) => m.text).join('; ');
+        return 'no goals' + (prog ? ` (${prog} program items)` : '') + (msgs ? '\n  messages: ' + msgs : '');
+      }
+      return gl.map((g: any, i: number) => {
+        const idx = n > 1 ? `Goal ${i + 1}: ` : '';
+        const hyps = (g.hyps || []).map((h: any) => `  ${h.name}: ${h.ty || h.type}`).join('\n');
+        return idx + '⊢ ' + g.ty + (hyps ? '\n' + hyps : '');
+      }).join('\n\n');
+    }
+
+    function formatFeedback(fb: Array<[number, string]>): string {
+      return fb.map(([lvl, msg]) => {
+        const tag = lvl === 1 ? 'ERR' : lvl === 3 ? 'WARN' : lvl === 4 ? 'INFO' : 'DBG';
+        return `  [${tag}] ${msg}`;
+      }).join('\n');
     }
 
     function fileLine(file: string, line: number): string {
@@ -618,14 +635,15 @@ async function main() {
             })
           );
 
-          return {
-            content: [
-              {
-                type: 'text',
-                text: JSON.stringify(result, null, 2),
-              },
-            ],
-          };
+          const goals = result.goals?.goals || [];
+          const ngoals = goals.length;
+          let summary: string;
+          if (result.error) {
+            summary = `${fileLine(file, position.line)} — error: ${result.error}`;
+          } else {
+            summary = `${fileLine(file, position.line)} — ${ngoals} goal(s):\n${formatGoals(result.goals)}`;
+          }
+          return reply(summary, result);
         }
 
         case 'coq_proof_state': {
@@ -688,38 +706,8 @@ async function main() {
             }
           );
 
-          return {
-            content: [
-              {
-                type: 'text',
-                text: JSON.stringify(result, null, 2),
-              },
-            ],
-          };
-        }
-
-        case 'coq_run_tactic': {
-          const { state_id, tactic, memo, hash } = args as {
-            state_id: number;
-            tactic: string;
-            memo?: boolean;
-            hash?: boolean;
-          };
-
-          const result = await lspClient.sendRequest<RunResult<number>>(
-            'petanque/run',
-            {
-              st: state_id,
-              tac: tactic,
-              opts: {
-                memo: memo ?? true,
-                hash: hash ?? true,
-              },
-            }
-          );
-
           return reply(
-            `state_id=${state_id} → "${tactic}" → new state_id=${result.st}${result.proof_finished ? ' (proof finished!)' : ''}`,
+            `${fileLine(file, position.line)} — state_id=${result.st}`,
             result
           );
         }
@@ -1137,17 +1125,12 @@ async function main() {
             }
           );
 
-          const goals = goalsResult.goals || [];
           const finished = runResult.proof_finished ? ' (proof finished!)' : '';
-          const nGoals = goals.length;
-          let goalTxt = '';
-          if (nGoals === 1) {
-            goalTxt = '\n' + goals[0].ty;
-          } else if (nGoals > 1) {
-            goalTxt = '\n' + goals.map((g: any, i: number) => goalSummary(g, i)).join('\n');
-          }
+          const nGoals = goalsResult.goals?.length || 0;
+          const fb = runResult.feedback?.length ? '\n' + formatFeedback(runResult.feedback) : '';
+          const gt = nGoals > 0 ? '\n' + formatGoals(goalsResult) : '';
           return reply(
-            `"${tactic}" at ${fileLine(file, position.line)} → ${nGoals} goal(s)${finished}${goalTxt}`,
+            `"${tactic}" at ${fileLine(file, position.line)} → ${nGoals} goal(s)${finished}${gt}${fb}`,
             { state_id: runResult.st, proof_finished: runResult.proof_finished, goals: goalsResult, feedback: runResult.feedback }
           );
         }
