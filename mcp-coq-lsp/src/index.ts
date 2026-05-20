@@ -540,6 +540,37 @@ async function main() {
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const { name, arguments: args } = request.params;
 
+    function reply(summary: string, data: unknown) {
+      return {
+        content: [
+          { type: 'text' as const, text: summary },
+          { type: 'text' as const, text: JSON.stringify(data, null, 2) },
+        ],
+      };
+    }
+
+    function err(summary: string, detail?: string) {
+      return {
+        content: [
+          { type: 'text' as const, text: summary },
+          { type: 'text' as const, text: JSON.stringify({ error: summary, detail: detail ?? summary }, null, 2) },
+        ],
+        isError: true,
+      };
+    }
+
+    function goalSummary(g: any, i: number): string {
+      let h = g.hyps?.length
+        ? g.hyps.map((h: any) => h.name + ': ' + (h.ty || h.type)).join(', ')
+        : 'no hypotheses';
+      return `  Goal ${i + 1} [${h}]\n  ⊢ ${g.ty}`;
+    }
+
+    function fileLine(file: string, line: number): string {
+      const base = file.split('/').pop() || file;
+      return `${base}:${line + 1}`;
+    }
+
     try {
       switch (name) {
         case 'coq_open_goals': {
@@ -608,23 +639,12 @@ async function main() {
             // Proof info may not be available
           }
 
-          return {
-            content: [
-              {
-                type: 'text',
-                text: JSON.stringify(
-                  {
-                    proof: proofInfo,
-                    goals: goalsResult.goals,
-                    messages: goalsResult.messages,
-                    error: goalsResult.error,
-                  },
-                  null,
-                  2
-                ),
-              },
-            ],
-          };
+          const pname = proofInfo?.name || 'unknown';
+          const ngoals = goalsResult.goals?.goals?.length || 0;
+          return reply(
+            `${fileLine(file, position.line)} — proof ${pname}, ${ngoals} goal(s)`,
+            { proof: proofInfo, goals: goalsResult.goals, messages: goalsResult.messages, error: goalsResult.error }
+          );
         }
 
         case 'coq_get_state_at_pos': {
@@ -679,14 +699,10 @@ async function main() {
             }
           );
 
-          return {
-            content: [
-              {
-                type: 'text',
-                text: JSON.stringify(result, null, 2),
-              },
-            ],
-          };
+          return reply(
+            `state_id=${state_id} → "${tactic}" → new state_id=${result.st}${result.proof_finished ? ' (proof finished!)' : ''}`,
+            result
+          );
         }
 
         case 'coq_goals_for_state': {
@@ -703,14 +719,10 @@ async function main() {
             }
           );
 
-          return {
-            content: [
-              {
-                type: 'text',
-                text: JSON.stringify(result, null, 2),
-              },
-            ],
-          };
+          return reply(
+            `goals for state_id=${state_id}: ${result.goals?.length || 0} goal(s)`,
+            result
+          );
         }
 
         case 'coq_apply_edit': {
@@ -734,21 +746,10 @@ async function main() {
 
           const updatedDoc = docManager.getDocument(file)!;
 
-          return {
-            content: [
-              {
-                type: 'text',
-                text: JSON.stringify(
-                  {
-                    file,
-                    new_version: updatedDoc.version,
-                  },
-                  null,
-                  2
-                ),
-              },
-            ],
-          };
+          return reply(
+            `${fileLine(file, 0)} — applied ${edits.length} edit(s), v${updatedDoc.version}`,
+            { file, new_version: updatedDoc.version }
+          );
         }
 
         case 'coq_insert_tactic': {
@@ -806,23 +807,15 @@ async function main() {
             }
           }
 
-          return {
-            content: [
-              {
-                type: 'text',
-                text: JSON.stringify(
-                  {
-                    applied: true,
-                    goals: goals?.goals,
-                    messages: goals?.messages || [],
-                    error: goals?.error || null,
-                  },
-                  null,
-                  2
-                ),
-              },
-            ],
-          };
+          const ngls = goals?.goals?.goals?.length ?? 0;
+          let gt = '';
+          if (ngls === 1) {
+            gt = '\n' + (goals?.goals?.goals?.[0]?.ty || '');
+          }
+          return reply(
+            `${fileLine(file, position.line)} — inserted "${tactic.trim()}" → ${ngls} goal(s)${gt}`,
+            { applied: true, goals: goals?.goals, messages: goals?.messages || [], error: goals?.error || null }
+          );
         }
 
         case 'coq_check': {
@@ -845,43 +838,18 @@ async function main() {
               })
             );
 
-            // Return a concise summary instead of the full result
-            const summary = {
-              file,
-              completed: result.completed?.status || 'unknown',
-              span_count: result.spans?.length || 0,
-              completed_range: result.completed?.range 
-                ? `L${result.completed.range.start.line}-L${result.completed.range.end.line}`
-                : 'none',
-              // Add a flag to indicate if checking completed successfully
-              success: true,
-            };
-
-            return {
-              content: [
-                {
-                  type: 'text',
-                  text: JSON.stringify(summary, null, 2),
-                },
-              ],
-            };
+            const spanCount = result.spans?.length || 0;
+            const range = result.completed?.range;
+            const loc = range ? `L${range.start.line}-L${range.end.line}` : '?';
+            return reply(
+              `${fileLine(file, 0)} — ${result.completed?.status || 'unknown'}, ${spanCount} spans (${loc})`,
+              { file, completed: result.completed?.status, span_count: spanCount, completed_range: loc, success: true }
+            );
           } catch (error) {
-            // Return error information in a concise format
-            const errorSummary = {
-              file,
-              success: false,
-              error: error instanceof Error ? error.message : String(error),
-            };
-
-            return {
-              content: [
-                {
-                  type: 'text',
-                  text: JSON.stringify(errorSummary, null, 2),
-                },
-              ],
-              isError: true,
-            };
+            return err(
+              `${fileLine(file, 0)} — check failed: ${error instanceof Error ? error.message : String(error)}`,
+              error instanceof Error ? error.message : String(error)
+            );
           }
         }
 
@@ -917,50 +885,16 @@ async function main() {
 
             // Check if any spans in the range have errors (we'll need to get diagnostics)
             // For now, just return span information
-            const rangeSummary = {
-              file,
-              range: {
-                start: `L${range.start.line}`,
-                end: `L${range.end.line}`,
-              },
-              span_count: targetSpans.length,
-              spans: targetSpans.map(span => ({
-                line: span.range.start.line,
-                status: 'parsed', // We'll enhance this later with actual diagnostics
-              })),
-              overall_completed: result.completed?.status || 'unknown',
-              success: true,
-            };
-
-            return {
-              content: [
-                {
-                  type: 'text',
-                  text: JSON.stringify(rangeSummary, null, 2),
-                },
-              ],
-            };
+            const spanCount = targetSpans.length;
+            return reply(
+              `${fileLine(file, range.start.line)}-${fileLine(file, range.end.line)} — ${spanCount} span(s), overall: ${result.completed?.status || 'unknown'}`,
+              { file, range: `L${range.start.line}-L${range.end.line}`, span_count: spanCount, overall_completed: result.completed?.status, success: true }
+            );
           } catch (error) {
-            // Return error information in a concise format
-            const errorSummary = {
-              file,
-              range: {
-                start: `L${range.start.line}`,
-                end: `L${range.end.line}`,
-              },
-              success: false,
-              error: error instanceof Error ? error.message : String(error),
-            };
-
-            return {
-              content: [
-                {
-                  type: 'text',
-                  text: JSON.stringify(errorSummary, null, 2),
-                },
-              ],
-              isError: true,
-            };
+            return err(
+              `${fileLine(file, range.start.line)}-${fileLine(file, range.end.line)} — check failed: ${error instanceof Error ? error.message : String(error)}`,
+              error instanceof Error ? error.message : String(error)
+            );
           }
         }
 
@@ -1000,23 +934,11 @@ async function main() {
             opts: { memo: false, hash: false },
           });
 
-          return {
-            content: [
-              {
-                type: 'text',
-                text: JSON.stringify(
-                  {
-                    messages: runResult.feedback.map(([level, msg]) => ({
-                      level,
-                      message: msg,
-                    })),
-                  },
-                  null,
-                  2
-                ),
-              },
-            ],
-          };
+          const msgs = runResult.feedback.map(([level, msg]) => ({ level, message: msg }));
+          return reply(
+            `Search "${pattern}" → ${msgs.length} result(s)`,
+            { messages: msgs }
+          );
         }
 
         case 'coq_check_term': {
@@ -1055,23 +977,11 @@ async function main() {
             opts: { memo: false, hash: false },
           });
 
-          return {
-            content: [
-              {
-                type: 'text',
-                text: JSON.stringify(
-                  {
-                    messages: runResult3.feedback.map(([level, msg]) => ({
-                      level,
-                      message: msg,
-                    })),
-                  },
-                  null,
-                  2
-                ),
-              },
-            ],
-          };
+          const msgs3 = runResult3.feedback.map(([level, msg]) => ({ level, message: msg }));
+          return reply(
+            `Check ${term} → ${msgs3.length} message(s): ${msgs3.map(m => m.message).join('; ')}`,
+            { messages: msgs3 }
+          );
         }
 
         case 'coq_about': {
@@ -1110,23 +1020,11 @@ async function main() {
             opts: { memo: false, hash: false },
           });
 
-          return {
-            content: [
-              {
-                type: 'text',
-                text: JSON.stringify(
-                  {
-                    messages: runResult4.feedback.map(([level, msg]) => ({
-                      level,
-                      message: msg,
-                    })),
-                  },
-                  null,
-                  2
-                ),
-              },
-            ],
-          };
+          const msgs4 = runResult4.feedback.map(([level, msg]) => ({ level, message: msg }));
+          return reply(
+            `About ${term} → ${msgs4.length} message(s): ${msgs4.map(m => m.message).join('; ')}`,
+            { messages: msgs4 }
+          );
         }
 
         case 'coq_undo': {
@@ -1182,21 +1080,10 @@ async function main() {
           await docManager.updateDocument(file, newText);
           await docManager.saveDocument(file);
 
-          return {
-            content: [
-              {
-                type: 'text',
-                text: JSON.stringify(
-                  {
-                    applied: true,
-                    removed_spans: count,
-                  },
-                  null,
-                  2
-                ),
-              },
-            ],
-          };
+          return reply(
+            `${fileLine(file, 0)} — undone ${count} span(s), ${spans.length - count} remaining`,
+            { applied: true, removed_spans: count }
+          );
         }
 
         case 'coq_try_tactic': {
@@ -1231,46 +1118,30 @@ async function main() {
             }
           );
 
-          return {
-            content: [
-              {
-                type: 'text',
-                text: JSON.stringify(
-                  {
-                    state_id: runResult.st,
-                    proof_finished: runResult.proof_finished,
-                    goals: goalsResult,
-                    feedback: runResult.feedback,
-                  },
-                  null,
-                  2
-                ),
-              },
-            ],
-          };
+          const goals = goalsResult.goals || [];
+          const finished = runResult.proof_finished ? ' (proof finished!)' : '';
+          const nGoals = goals.length;
+          let goalTxt = '';
+          if (nGoals === 1) {
+            goalTxt = '\n' + goals[0].ty;
+          } else if (nGoals > 1) {
+            goalTxt = '\n' + goals.map((g: any, i: number) => goalSummary(g, i)).join('\n');
+          }
+          return reply(
+            `"${tactic}" at ${fileLine(file, position.line)} → ${nGoals} goal(s)${finished}${goalTxt}`,
+            { state_id: runResult.st, proof_finished: runResult.proof_finished, goals: goalsResult, feedback: runResult.feedback }
+          );
         }
 
         default:
           throw new Error(`Unknown tool: ${name}`);
       }
     } catch (error) {
-      const err = error as Error & { data?: unknown };
-      return {
-        content: [
-          {
-            type: 'text',
-            text: JSON.stringify(
-              {
-                error: err.message,
-                data: err.data,
-              },
-              null,
-              2
-            ),
-          },
-        ],
-        isError: true,
-      };
+      const e = error as Error & { data?: unknown };
+      return err(
+        `${name}: ${e.message}`,
+        String(e.data ?? e.message)
+      );
     }
   });
 
