@@ -576,11 +576,11 @@ async function main() {
       const goalsObj = d?.goals ? (Array.isArray(d.goals) ? { goals: d.goals } : d.goals) : null;
       const extra = goalsObj ? compactGoalSummary(goalsObj) : '';
       const compact = extra || summary;
-      const text = compact + (detail ? '\n\n' + detail : '');
       return {
         content: [
-          { type: 'text' as const, text },
+          { type: 'text' as const, text: compact },
         ],
+        structuredContent: detail ? { _detail: detail } : undefined,
       };
     }
 
