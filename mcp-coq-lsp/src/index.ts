@@ -1122,7 +1122,8 @@ async function main() {
                 mode: 'Prev',
               })
             );
-            const bullet = stateResult.goals?.bullet || ((stateResult.goals?.goals?.length || 0) > 1 ? '-' : undefined);
+            const rawBullet = stateResult.goals?.bullet || ((stateResult.goals?.goals?.length || 0) > 1 ? '-' : undefined);
+            const bullet = rawBullet ? rawBullet.replace(/Focus next goal with bullet /, '').replace(/\.$/, '') : undefined;
             const firstWord = tactic.split(/\s+/)[0];
             const hasBullet = /^[-+*]+$/.test(firstWord) || firstWord === '{';
             if (bullet && !hasBullet && tactic !== 'Qed.' && tactic !== 'Defined.' && tactic !== 'Admitted.') {
