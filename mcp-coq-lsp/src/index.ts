@@ -797,18 +797,19 @@ async function main() {
       const stack = gc?.stack || [];
       const bullet = gc?.bullet;
 
-      if (goals.length === 0) {
-        if (stack.length === 0) return 'Proof complete. Use coq_insert_tactic "Qed." to close.';
-        return 'No goals at current focus. Use coq_insert_tactic to add the next bullet.';
-      }
+      const bgGoals = stack.reduce(
+        (s: number, [b, a]: any[]) => s + (b?.length || 0) + (a?.length || 0), 0
+      );
+      const total = goals.length + bgGoals;
+
+      if (total === 0) return 'Proof complete. Use coq_insert_tactic "Qed." to close.';
+      if (goals.length === 0 && bgGoals > 0) return `Bullet closed. ${bgGoals} goal(s) in background. Insert next bullet.`;
       if (goals.length === 1) {
-        const bg = stack.map(([b, a]: any[]) => b.length + a.length).reduce((s: number, n: number) => s + n, 0);
-        const prefix = bullet ? `bullet ${bullet}` : '';
-        if (bg > 0) return `${prefix ? prefix + ' — ' : ''}1 goal at focus, ${bg} in background. Insert a tactic.`;
+        if (bgGoals > 0) return `${bullet ? bullet + ' ' : ''}1 goal at focus, ${bgGoals} in background. Insert a tactic.`;
         return '1 goal. Insert a tactic.';
       }
       const summary = compactGoalSummary(gc);
-      return `${goals.length} goals at focus. ${summary}${bullet ? ` (bullet ${bullet})` : ''}`;
+      return `${goals.length} goals at focus. ${summary}${bullet ? ' (bullet ' + bullet + ')' : ''}`;
     }
 
     function formatFeedback(fb: Array<[number, string]>): string {
