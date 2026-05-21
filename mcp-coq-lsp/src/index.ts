@@ -906,9 +906,28 @@ async function main() {
           };
 
           const doc = await ensureDocumentOpened(file);
-          const viewPos = autoAdvancePosition(doc.text, position);
+          const docLines = doc.text.split('\n');
+
+          // Auto-remove Admitted if it's the only thing after Proof
           const insPos = insertPosition(doc.text, position);
-          filePositions.set(file, insPos);
+          const insLine = (docLines[insPos.line] || '').trim();
+          if ((insLine === 'Admitted.' || insLine === 'Qed.' || insLine === 'Defined.')) {
+            let prev = insPos.line - 1;
+            while (prev >= 0 && (docLines[prev].trim() === '' || docLines[prev].trim().startsWith('(*'))) prev--;
+            if (prev >= 0 && ((docLines[prev] || '').trim() === 'Proof.')) {
+              const cleared = docManager.applyEdits(doc.text, [{
+                range: { start: { line: insPos.line, character: 0 }, end: { line: insPos.line + 1, character: 0 } },
+                newText: '',
+              }]);
+              await docManager.updateDocument(file, cleared);
+              await docManager.saveDocument(file);
+              // Refresh doc state
+              const newDoc = docManager.getDocument(file)!;
+              filePositions.set(file, { line: insPos.line, character: 0 });
+            }
+          }
+          const viewPos = autoAdvancePosition(doc.text, position);
+          if (!filePositions.has(file)) filePositions.set(file, insPos);
 
           // Get proof tree — use After mode so we see goals after Proof. even if Admitted follows
           const goalsResult = await retryDocumentNotReady(() =>
