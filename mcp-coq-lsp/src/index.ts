@@ -1187,10 +1187,18 @@ async function main() {
             }
           }
 
-          const ngls = goals?.goals?.goals?.length ?? 0;
-          const hint = goals?.goals ? nextHint(goals.goals) : '';
+          const gcAfter = goals?.goals;
+          const nFocus = gcAfter?.goals?.length ?? 0;
+          const nBg = (gcAfter?.stack || []).reduce(
+            (s: number, [b, a]: any[]) => s + (b?.length || 0) + (a?.length || 0), 0
+          );
+          const hint = gcAfter ? nextHint(gcAfter) : '';
+          const stateMsg = nFocus === 0 && nBg === 0 ? 'done' :
+                           nFocus === 0 ? `bullet closed, ${nBg} in background` :
+                           nBg > 0 ? `${nFocus} at focus, ${nBg} in background` :
+                           `${nFocus} goal(s)`;
           return reply(
-            `${fileLine(file, position.line)} — inserted "${tactic.trim()}" → ${ngls} goal(s)${hint ? '\n  next: ' + hint : ''}`,
+            `${fileLine(file, position.line)} — inserted "${tactic.trim()}" → ${stateMsg}${hint ? '\n  next: ' + hint : ''}`,
             {
               applied: true,
               inserted_until: insertedUntil,
