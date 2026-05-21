@@ -159,23 +159,31 @@ async function main() {
   function autoAdvancePosition(text: string, pos: Position): Position {
     const lines = text.split('\n');
     let line = pos.line;
+    // Phase 1: skip keyword/comment lines
     for (let i = 0; i < 20; i++) {
       if (line >= lines.length) break;
-      const l = lines[line];
-      if (!isSkipLine(l)) break;
-      // Skip this line, try next
-      if (l.trim() === 'Proof.' ||
-          l.trim() === 'Defined.') {
-        line = line + 1;
-      } else {
-        line = line + 1;
-      }
+      if (!isSkipLine(lines[line])) break;
+      line = line + 1;
+    }
+    return { line, character: 0 };
+  }
+
+  function insertPosition(text: string, pos: Position): Position {
+    const lines = text.split('\n');
+    let line = pos.line;
+    // Skip keyword/comment lines
+    for (let i = 0; i < 20; i++) {
+      if (line >= lines.length) break;
+      if (!isSkipLine(lines[line])) break;
+      line = line + 1;
+    }
+    // Skip past all non-blank content (existing tactics)
+    for (let i = 0; i < 200; i++) {
+      if (line >= lines.length) break;
+      if (lines[line].trim() === '') break;
+      line = line + 1;
     }
     if (line >= lines.length) line = lines.length - 1;
-    // Find first non-blank line at or after current
-    while (line < lines.length && lines[line].trim() === '') {
-      line++;
-    }
     return { line, character: 0 };
   }
 
@@ -890,14 +898,15 @@ async function main() {
           };
 
           const doc = await ensureDocumentOpened(file);
-          const advanced = autoAdvancePosition(doc.text, position);
-          filePositions.set(file, advanced);
+          const viewPos = autoAdvancePosition(doc.text, position);
+          const insPos = insertPosition(doc.text, position);
+          filePositions.set(file, insPos);
 
           // Get proof tree
           const goalsResult = await retryDocumentNotReady(() =>
             lspClient.sendRequest<GoalAnswer<string>>('proof/goals', {
               textDocument: { uri: doc.uri, version: doc.version },
-              position: advanced,
+              position: viewPos,
               pp_format: 'Str',
               mode: 'Prev',
             })
