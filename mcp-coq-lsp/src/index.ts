@@ -150,10 +150,7 @@ async function main() {
     return trimmed === '' ||
       trimmed.startsWith('(*') ||
       trimmed === 'Proof.' ||
-      trimmed === 'Qed.' ||
-      trimmed === 'Admitted.' ||
-      trimmed === 'Defined.' ||
-      trimmed.startsWith('(*');
+      trimmed === 'Defined.';
   }
 
   function autoAdvancePosition(text: string, pos: Position): Position {
@@ -905,13 +902,13 @@ async function main() {
           const insPos = insertPosition(doc.text, position);
           filePositions.set(file, insPos);
 
-          // Get proof tree
+          // Get proof tree — use After mode so we see goals after Proof. even if Admitted follows
           const goalsResult = await retryDocumentNotReady(() =>
             lspClient.sendRequest<GoalAnswer<string>>('proof/goals', {
               textDocument: { uri: doc.uri, version: doc.version },
-              position: viewPos,
+              position,
               pp_format: 'Str',
-              mode: 'Prev',
+              mode: 'After',
             })
           );
 
