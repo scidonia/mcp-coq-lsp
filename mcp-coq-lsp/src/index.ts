@@ -708,13 +708,17 @@ async function main() {
 
     function reply(summary: string, data: unknown) {
       const d = data as Record<string, unknown>;
-      const parts: string[] = [];
+      const parts: string[] = [summary];
       if (d?.goals) {
         const goalsWrapped = Array.isArray(d.goals) ? { goals: d.goals } : d.goals;
-        parts.push(formatGoals(goalsWrapped));
+        const gl = (goalsWrapped as any)?.goals || [];
+        if (gl.length > 0) {
+          parts.push('');
+          parts.push(formatGoals(goalsWrapped));
+        }
       }
       if (Array.isArray(d?.feedback) && d.feedback.length > 0) parts.push(formatFeedback(d.feedback));
-      const text = parts.join('\n') || summary;
+      const text = parts.join('\n');
       return {
         content: [
           { type: 'text' as const, text },
