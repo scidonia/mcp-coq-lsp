@@ -1733,6 +1733,7 @@ async function main() {
           while (endLine < docLines.length) {
             const l = (docLines[endLine] || '').trim();
             if (l === 'Qed.' || l === 'Admitted.' || l === 'Defined.') break;
+            if (isTopLevelLine(docLines[endLine] || '')) break;
             endLine++;
           }
 
