@@ -1302,6 +1302,9 @@ async function main() {
                 pp_format: 'Str',
                 mode: 'Prev',
               });
+              if (goalsResult.error) {
+                console.error('Goals query error:', goalsResult.error);
+              }
               goals = goalsResult;
             } catch (err) {
               console.error('Failed to get goals:', err);
@@ -1309,15 +1312,20 @@ async function main() {
           }
 
           const gcAfter = goals?.goals;
+          const queryError = goals?.error;
           const nFocus = gcAfter?.goals?.length ?? 0;
           const nBg = (gcAfter?.stack || []).reduce(
             (s: number, [b, a]: any[]) => s + (b?.length || 0) + (a?.length || 0), 0
           );
           const hint = gcAfter ? nextHint(gcAfter) : '';
-          const stateMsg = nFocus === 0 && nBg === 0 ? 'done — try Qed' :
-                           nFocus === 0 ? `bullet closed, ${nBg} in background` :
-                           nBg > 0 ? `${nFocus} at focus, ${nBg} in background` :
-                           `${nFocus} goal(s)`;
+          const stateMsg = queryError
+            ? `error: ${queryError}`
+            : gcAfter === undefined || gcAfter === null
+            ? 'goals query failed'
+            : nFocus === 0 && nBg === 0 ? 'done — try Qed'
+            : nFocus === 0 ? `bullet closed, ${nBg} in background`
+            : nBg > 0 ? `${nFocus} at focus, ${nBg} in background`
+            : `${nFocus} goal(s)`;
           return reply(
             `${fileLine(file, position.line)} — inserted "${tactic.trim()}" → ${stateMsg}${hint ? '\n  next: ' + hint : ''}`,
             {
