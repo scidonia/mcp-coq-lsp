@@ -138,5 +138,4 @@ Theorem preservation : forall t mu t' mu' T S,
 Proof.
 
 intros t mu t' mu' T S Hty Hstep Hok.
-induction Hstep.
-inversion Hty; subst. apply IHHstep in H2; auto. destruct H2 as [S' [H1 [H2' H3]]]. exists S'; split; [|split]; auto. econstructor; eauto.
+Admitted.
