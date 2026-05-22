@@ -1284,6 +1284,9 @@ async function main() {
           await ensureDocumentOpened(file);
           const doc = docManager.getDocument(file)!;
 
+          // Advance past Proof. and blank lines to the actual insert point
+          const insPos = insertPosition(doc.text, position);
+
           // Auto-bullet: query proof state to determine if bullet prefix is needed
           let tactic = rawTactic.trim();
           try {
@@ -1302,7 +1305,7 @@ async function main() {
             const hasBullet = /^[-+*]+$/.test(firstWord) || firstWord === '{';
 
             // Compute indent from stack depth (only for line-start insertions)
-            const atLineStart = position.character === 0;
+            const atLineStart = insPos.character === 0;
             const stackDepth = (stateResult.goals?.stack || []).length;
             const indent = atLineStart ? '  '.repeat(stackDepth + 1) : '';
 
@@ -1315,35 +1318,35 @@ async function main() {
             // state query is best-effort for bullets
           }
 
-          // Insert tactic at position
+          // Insert tactic at insert point
           const insertText = tactic.endsWith('\n') ? `${tactic}\n` : `${tactic}\n`;
           const insertLines = insertText.split('\n');
           const contentLines = insertLines.slice(0, -1); // exclude trailing empty from \n
           const lastIdx = contentLines.length - 1;
           const insertedLinesCount = contentLines.length;
           const insertedUntil: Position = {
-            line: position.line + insertedLinesCount,
+            line: insPos.line + insertedLinesCount,
             character: 0,
           };
           const nextTacticPosition: Position = {
-            line: position.line + lastIdx,
+            line: insPos.line + lastIdx,
             character: lastIdx === 0
-              ? (position.character || 0) + contentLines[0].length
+              ? (insPos.character || 0) + contentLines[0].length
               : contentLines[lastIdx].length,
           };
           pushFileHistory(file, doc.text);
 
           // If inserting Qed at a proof-ending keyword line, replace it
           const docLines = doc.text.split('\n');
-          const curLine = (docLines[position.line] || '').trim();
+          const curLine = (docLines[insPos.line] || '').trim();
           const editEnd: Position = (tactic === 'Qed.' && (curLine === 'Admitted.' || curLine === 'Qed.' || curLine === 'Defined.'))
-            ? { line: position.line, character: (docLines[position.line] || '').length }
-            : position;
+            ? { line: insPos.line, character: (docLines[insPos.line] || '').length }
+            : insPos;
 
           const newText = docManager.applyEdits(doc.text, [
             {
               range: {
-                start: position,
+                start: insPos,
                 end: editEnd,
               },
               newText: insertText,
