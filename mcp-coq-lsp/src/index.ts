@@ -1328,14 +1328,40 @@ async function main() {
             : nFocus === 0 ? `bullet closed, ${nBg} in background`
             : nBg > 0 ? `${nFocus} at focus, ${nBg} in background`
             : `${nFocus} goal(s)`;
+
+          // Extract proof script for context
+          const scriptLines: string[] = [];
+          {
+            const fLines = doc.text.split('\n');
+            let pl = insertedUntil.line;
+            for (; pl >= 0; pl--) {
+              const t = (fLines[pl] || '').trim();
+              if (t === 'Proof.' || t.startsWith('Proof. ')) break;
+            }
+            if (pl >= 0) {
+              for (let i = pl + 1; i <= insertedUntil.line; i++) {
+                const l = fLines[i];
+                if (!l) continue;
+                const t = l.trim();
+                if (t === '' || t === 'Proof.') continue;
+                if (isSkipLine(l)) continue;
+                scriptLines.push(l);
+              }
+            }
+          }
+          const scriptBlock = scriptLines.length > 0
+            ? '\n-- proof script ----------\n' + scriptLines.map(l => `  ${l}`).join('\n')
+            : '';
+
           return reply(
-            `${fileLine(file, position.line)} — inserted "${tactic.trim()}" → ${stateMsg}${hint ? '\n  next: ' + hint : ''}`,
+            `${fileLine(file, position.line)} — inserted "${tactic.trim()}" → ${stateMsg}${scriptBlock}${hint ? '\n  next: ' + hint : ''}`,
             {
               applied: true,
               inserted_until: insertedUntil,
               next_tactic_position: nextTacticPosition,
               next: hint,
               goals: goals?.goals,
+              script: scriptLines,
               messages: goals?.messages || [],
               error: goals?.error || null,
             }
