@@ -147,10 +147,16 @@ async function main() {
 
   function isSkipLine(line: string): boolean {
     const trimmed = line.trim();
-    return trimmed === '' ||
-      trimmed.startsWith('(*') ||
-      trimmed === 'Proof.' || trimmed.startsWith('Proof. ') ||
-      trimmed === 'Defined.';
+    if (trimmed === '') return true;
+    if (trimmed.startsWith('(*')) return true;
+    if (trimmed === 'Proof.' || trimmed === 'Defined.') return true;
+    if (trimmed.startsWith('Proof. ')) {
+      const after = trimmed.substring('Proof.'.length).trim();
+      // Don't skip "Proof. Admitted." — that's the entire proof body
+      if (after === 'Admitted.' || after === 'Qed.' || after === 'Defined.') return false;
+      return true;
+    }
+    return false;
   }
 
   function autoAdvancePosition(text: string, pos: Position): Position {
@@ -996,11 +1002,11 @@ async function main() {
           let didAutoRemove = false;
           const insPos = insertPosition(doc.text, position);
           const insLine = (docLines[insPos.line] || '').trim();
+          // Case 1: "Admitted." on its own line
           if ((insLine === 'Admitted.' || insLine === 'Qed.' || insLine === 'Defined.')) {
             let prev = insPos.line - 1;
             while (prev >= 0 && (docLines[prev].trim() === '' || docLines[prev].trim().startsWith('(*'))) prev--;
             if (prev >= 0 && ((docLines[prev] || '').trim() === 'Proof.')) {
-              // Only remove if no tactics exist between Proof and Admitted
               const cleared = docManager.applyEdits(doc.text, [{
                 range: { start: { line: insPos.line, character: 0 }, end: { line: insPos.line + 1, character: 0 } },
                 newText: '',
@@ -1011,22 +1017,23 @@ async function main() {
               didAutoRemove = true;
             }
           }
-          // Handle "Proof. Admitted." on one line: split into Proof.\n
+          // Case 2: "Proof. Admitted." on one line (after insertPosition advanced past it)
           if (!didAutoRemove) {
-            const prevLineIdx = insPos.line - 1;
-            if (prevLineIdx >= 0) {
-              const prevTrimmed = (docLines[prevLineIdx] || '').trim();
-              if (prevTrimmed.startsWith('Proof.') && prevTrimmed !== 'Proof.' &&
-                  (prevTrimmed.includes('Admitted.') || prevTrimmed.includes('Qed.') || prevTrimmed.includes('Defined.'))) {
+            for (let i = insPos.line - 1; i >= 0; i--) {
+              const t = (docLines[i] || '').trim();
+              if (t.startsWith('Proof.') && t !== 'Proof.' &&
+                  (t.includes('Admitted.') || t.includes('Qed.') || t.includes('Defined.'))) {
                 const cleared = docManager.applyEdits(doc.text, [{
-                  range: { start: { line: prevLineIdx, character: 0 }, end: { line: prevLineIdx + 1, character: 0 } },
+                  range: { start: { line: i, character: 0 }, end: { line: i + 1, character: 0 } },
                   newText: 'Proof.\n',
                 }]);
                 await docManager.updateDocument(file, cleared);
                 await docManager.saveDocument(file);
-                filePositions.set(file, { line: prevLineIdx, character: 0 });
+                filePositions.set(file, { line: i, character: 0 });
                 didAutoRemove = true;
+                break;
               }
+              if (t !== '' && !t.startsWith('(*')) break;
             }
           }
           // Refresh document state after any auto-remove edit
