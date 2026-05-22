@@ -162,6 +162,7 @@ async function main() {
       if (!isSkipLine(lines[line])) break;
       line = line + 1;
     }
+    if (line > lines.length) line = lines.length;
     return { line, character: 0 };
   }
 
@@ -218,6 +219,7 @@ async function main() {
       if (isTopLevelLine(lines[line] || '')) break;
       line = line + 1;
     }
+    if (line > lines.length) line = lines.length;
     return { line, character: 0 };
   }
 

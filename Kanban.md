@@ -5,18 +5,21 @@
 ### CRITICAL
 
 **C1. `proof/goals` returns 0 goals after compound tactics**
-When inserting `induction 1; simpl; intros.` (compound with semicolons),
-`proof/goals` returns empty goals even when subgoals remain.
-This causes `coq_insert_tactic` to report "done" when the proof isn't.
-Separate from genuinely-done proofs where eauto closes everything.
-Root cause unknown — needs rocq-lsp investigation.
-*Observed: `induction Ht; simpl; intros ...` in substitution lemma, `induction Hok.` in extends_heap_ok.*
+**Status: Pending verification.** Investigation shows that compound tactics like
+`induction; auto` genuinely close many proofs. The display was correct in all
+tested cases. The actual bug: when the goals query FAILS (null response), the
+state shows "done" instead of "query failed".
+**Fix applied (f970e16):** Now shows "goals query failed" or "error: ..." when
+the response lacks goals data. Needs restart to verify.
+*Root cause narrowed: might not be rocq‑lsp returning wrong data, but the handler
+not checking for null/error responses.*
 
-**C2. `coq_add_lemma` + `coq_reset_proof` corrupt file when chained**
-Cursor tracking between tools is unreliable after adding/resetting lemmas.
-Causes file corruption (missing lemma headers, duplicate Proof/Qed, stray Admitted).
-*Observed: PCF proofs — multiple corruption events, required undo/apply_edit to fix.*
-*Mitigated: name-based `before:` parameter in `coq_add_lemma` (pending verification).*
+**C2. File corruption when `coq_insert_tactic` without explicit position**
+**Status: Pending fix.** When cursor tracking breaks (e.g., cursor past EOF),
+subsequent positionless inserts create garbage content in the file.
+Name-based `coq_focus`/`coq_reset_proof` help but don't fix the root cause:
+`coq_insert_tactic` should validate the cursor position before inserting.
+*Fix: check that cursor line exists in the file before using it as insert point.*
 
 ### HIGH
 
