@@ -992,7 +992,12 @@ async function main() {
           // Refresh document state after any auto-remove edit
           const freshDoc = didAutoRemove ? docManager.getDocument(file)! : doc;
 
-          // Get proof tree at last point in proof (After mode shows current subgoals)
+          // Force LSP to finish parsing, then query goals at last point
+          await retryDocumentNotReady(() =>
+            lspClient.sendRequest('coq/check', {
+              textDocument: { uri: doc.uri, version: doc.version },
+            })
+          );
           const lastPoint = insertPosition(doc.text, position);
           const goalsResult = await retryDocumentNotReady(() =>
             lspClient.sendRequest<GoalAnswer<string>>('proof/goals', {
