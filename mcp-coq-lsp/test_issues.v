@@ -1,7 +1,5 @@
-Require Import Arith List.
+Require Import Arith List Compare_dec.
 Import ListNotations.
-
-(** * PCF: Type Preservation *)
 
 Inductive ty : Type :=
   | TyNat : ty | TyBool : ty | TyArrow : ty -> ty -> ty.
@@ -70,14 +68,26 @@ Proof.
   induction G1; simpl; intros H; [exact H | apply IHG1; exact H].
 Qed.
 
+Lemma ctx_lookup_skip : forall G1 G2 x T,
+  nth_error (G1 ++ (T :: G2)) x = Some T ->
+  x < length G1 ->
+  nth_error G1 x = Some T.
+Proof.
+induction G1 as [| T1 G1' IH]; simpl; intros x T2 H Hlen; [exfalso; exact (Lt.lt_n_O _ Hlen) | ].
+Qed.
+
+
 Lemma substitution_preserves_typing : forall G1 G2 x s t T,
-  has_type (G1 ++ G2) s T ->
-  has_type (G1 ++ (T :: G2)) t T ->
+    has_type (G1 ++ (T :: G2)) t T ->
   has_type (G1 ++ G2) (subst (length G1) s t) T.
 Proof.
-Admitted.
+intros G1 G2 x s t T Hs Ht. revert G1 G2 x s Hs. induction Ht; simpl; intros G1 G2 x s Hs.
+Qed.
+
 
 Theorem preservation : forall t t' T,
   has_type [] t T -> step t t' -> has_type [] t' T.
 Proof.
-Admitted.
+intros t t' T Ht Hstep. revert T Ht. induction Hstep; intros T Ht; inversion Ht; subst; eauto; try (constructor; eauto).
+Qed.
+
