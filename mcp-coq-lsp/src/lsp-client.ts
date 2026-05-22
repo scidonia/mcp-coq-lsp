@@ -250,12 +250,18 @@ export class RocqLspClient {
   /**
    * Send a JSON-RPC request to rocq-lsp
    */
-  async sendRequest<T>(method: string, params: unknown): Promise<T> {
+  async sendRequest<T>(method: string, params: unknown, timeoutMs = 15000): Promise<T> {
     if (!this.ready || !this.connection) {
       throw new Error('LSP client not started');
     }
 
-    return this.connection.sendRequest<T>(method, params);
+    const result = await Promise.race([
+      this.connection.sendRequest<T>(method, params),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error(`LSP request timeout: ${method}`)), timeoutMs)
+      ),
+    ]);
+    return result;
   }
 
   /**

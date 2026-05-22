@@ -219,6 +219,12 @@ async function main() {
     return { line, character: 0 };
   }
 
+  /** Clamp a position to be within [0, lines.length-1] — never past EOF. */
+  function safePos(pos: Position, text: string): Position {
+    const maxLine = Math.max(0, text.split('\n').length - 1);
+    return { line: Math.min(pos.line, maxLine), character: 0 };
+  }
+
   function pushFileHistory(path: string, text: string) {
     if (!fileHistory.has(path)) fileHistory.set(path, []);
     const stack = fileHistory.get(path)!;
@@ -1236,11 +1242,7 @@ async function main() {
 
           // Advance past Proof. and blank lines to the actual insert point
           const insPos = insertPosition(doc.text, position);
-          // Clamp to valid range for bullet query (avoid querying past EOF)
-          const bulletPos = {
-            line: Math.min(insPos.line, doc.text.split('\n').length - 1),
-            character: 0,
-          };
+          const bulletPos = safePos(insPos, doc.text);
 
           // Auto-bullet: query proof state to determine if bullet prefix is needed
           let tactic = rawTactic.trim();
