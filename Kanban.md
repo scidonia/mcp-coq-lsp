@@ -4,22 +4,19 @@
 
 ### CRITICAL
 
-**C1. `proof/goals` returns 0 goals after compound tactics**
-**Status: Pending verification.** Investigation shows that compound tactics like
-`induction; auto` genuinely close many proofs. The display was correct in all
-tested cases. The actual bug: when the goals query FAILS (null response), the
-state shows "done" instead of "query failed".
-**Fix applied (f970e16):** Now shows "goals query failed" or "error: ..." when
-the response lacks goals data. Needs restart to verify.
-*Root cause narrowed: might not be rocq‑lsp returning wrong data, but the handler
-not checking for null/error responses.*
+**C1. Goals state shows "done" when query failed**
+**Status: Fixed (76c785c).** When `proof/goals` returns no data (null, error, or
+missing goals field), the state now shows "goals query failed" or "error: ..."
+instead of "done — try Qed". The caller can distinguish from genuinely-done.
+Compound tactics that genuinely close proofs continue to show "done — try Qed".
+*Investigation note: all compound-tactic cases tested (`induction; auto`,
+`induction; simpl; intros`) genuinely closed. No case of wrong 0-goals found.*
 
-**C2. File corruption when `coq_insert_tactic` without explicit position**
-**Status: Pending fix.** When cursor tracking breaks (e.g., cursor past EOF),
-subsequent positionless inserts create garbage content in the file.
-Name-based `coq_focus`/`coq_reset_proof` help but don't fix the root cause:
-`coq_insert_tactic` should validate the cursor position before inserting.
-*Fix: check that cursor line exists in the file before using it as insert point.*
+**C2. `coq_insert_tactic` inserts garbage when cursor past EOF**
+**Status: Fixed (76c785c).** `autoAdvancePosition` and `insertPosition` now
+cap to `lines.length`. Previously could return positions beyond the file,
+causing insertions at line 150+ in a 130-line file. Orphan tactics scattered
+throughout the file.
 
 ### HIGH
 
