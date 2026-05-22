@@ -26,14 +26,15 @@ written without separate `coq_focus` calls. Makes it hard to track proof progres
 *Fix: include proof script lines in response.*
 
 **H2. `coq_focus` auto-remove of `Admitted.` leaves empty proof body**
-When `Proof.\nAdmitted.` has nothing between, auto-remove creates an empty
-proof body with 0 goals. The tool doesn't confirm what was removed.
-*Mitigation: check for empty body before removal; log what was removed.*
+**Status: Fixed (2349ab4).** The response now shows "(auto-removed empty proof)"
+when the `Admitted.` stub was removed. The `auto_removed` field is also in the
+reply metadata. The tool description explains the auto-remove behavior.
 
 **H3. `coq_apply_edit` requires manual line number computation**
-Absolute line ranges are error-prone. I computed wrong ranges twice during PCF.
-A text-replace or diff-based interface would prevent off-by-one corruption.
-*Fix: accept `oldText`/`newText` search-and-replace instead of line ranges.*
+**Status: Fixed (2349ab4).** `coq_apply_edit` now accepts optional `find` and
+`replace` strings. When `find` is provided, the server locates the text via
+`indexOf` and computes the range automatically. Reports "text not found" if the
+string isn't present.
 
 ### MEDIUM
 
