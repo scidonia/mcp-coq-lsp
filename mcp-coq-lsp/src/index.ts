@@ -1795,7 +1795,7 @@ async function main() {
             let line = cur.line;
             while (line > 0) {
               const l = (docLines[line] || '').trim();
-              if (isTopLevelLine(docLines[line] || '') || l === 'Proof.') { topLine = line; break; }
+              if (isTopLevelLine(docLines[line] || '')) { topLine = line; break; }
               line--;
             }
             if (topLine === docLines.length) topLine = 0;
