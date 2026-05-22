@@ -149,8 +149,7 @@ async function main() {
     const trimmed = line.trim();
     if (trimmed === '') return true;
     if (trimmed.startsWith('(*')) return true;
-    if (trimmed === 'Proof.' || trimmed === 'Defined.') return true;
-    if (trimmed.startsWith('Proof. ')) {
+    if (trimmed === 'Proof.' || trimmed.startsWith('Proof. ')) {
       const after = trimmed.substring('Proof.'.length).trim();
       // Don't skip "Proof. Admitted." — that's the entire proof body
       if (after === 'Admitted.' || after === 'Qed.' || after === 'Defined.') return false;
@@ -1922,18 +1921,25 @@ async function main() {
           const proofLine = findProofLine(docLines, name);
           if (proofLine < 0) throw new Error(`Proof not found: "${name}"`);
 
+          let foundClosing = false;
           let endLine = proofLine + 1;
           while (endLine < docLines.length) {
             const l = (docLines[endLine] || '').trim();
-            if (l === 'Qed.' || l === 'Admitted.' || l === 'Defined.') break;
+            if (l === 'Qed.' || l === 'Admitted.' || l === 'Defined.') { foundClosing = true; break; }
             if (isTopLevelLine(docLines[endLine] || '')) break;
             endLine++;
           }
 
+          const end = foundClosing
+            ? { line: endLine + 1, character: 0 }
+            : (endLine < docLines.length
+                ? { line: endLine, character: 0 }
+                : { line: endLine, character: (docLines[endLine - 1] || '').length });
+
           const newText = docManager.applyEdits(doc.text, [{
             range: {
               start: { line: proofLine + 1, character: 0 },
-              end: endLine < docLines.length ? { line: endLine + 1, character: 0 } : { line: endLine, character: (docLines[endLine - 1] || '').length },
+              end,
             },
             newText: 'Admitted.\n',
           }]);

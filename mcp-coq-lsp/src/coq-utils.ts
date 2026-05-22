@@ -5,10 +5,8 @@ export function isSkipLine(line: string): boolean {
   const trimmed = line.trim();
   if (trimmed === '') return true;
   if (trimmed.startsWith('(*')) return true;
-  if (trimmed === 'Proof.' || trimmed === 'Defined.') return true;
-  if (trimmed.startsWith('Proof. ')) {
+  if (trimmed === 'Proof.' || trimmed.startsWith('Proof. ')) {
     const after = trimmed.substring('Proof.'.length).trim();
-    // Don't skip "Proof. Admitted." — that's the entire proof body
     if (after === 'Admitted.' || after === 'Qed.' || after === 'Defined.') return false;
     return true;
   }
