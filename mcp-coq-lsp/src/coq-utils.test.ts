@@ -48,7 +48,7 @@ function focusAutoRemove(text: string, proofName: string): { after: string; remo
 
 function insertTactic(
   text: string, tactic: string, proofName: string,
-  opts?: { bullet?: string | null },
+  opts?: { bullet?: string | null; nested?: boolean },
 ): string {
   const lines = text.split('\n');
   const cursor = findProofLine(lines, proofName);
@@ -57,8 +57,11 @@ function insertTactic(
   const insPos = insertPosition(text, pos);
   const atLineStart = insPos.character === 0;
 
-  const indent = atLineStart ? computeBulletIndent(text, insPos, cursor) : '';
+  const baseIndent = atLineStart ? computeBulletIndent(text, insPos, cursor) : '';
   const b = opts?.bullet ?? undefined;
+  // When auto-bullet fires inside an active bullet, nested → indent one level deeper
+  const nested = opts?.nested ?? false;
+  const indent = (b && nested) ? baseIndent + '  ' : baseIndent;
   const prefix = b ? `${indent}${b} ` : indent;
   const fullTactic = `${prefix}${tactic}\n`;
 
@@ -292,6 +295,20 @@ describe('insertTactic with text-based indent', () => {
     const secondDash = lines.find(l => l.includes('- auto'));
     expect(firstDash).toBe('  - reflexivity.');
     expect(secondDash).toBe('  - auto.');
+  });
+
+  it('nested bullet indents one level deeper (4sp) when inside active bullet', () => {
+    // Inside an active `-` bullet, destruct creates subgoals → nested `-`
+    const text = lemma + `\n  - destruct n.\nAdmitted.`;
+    const after = insertTactic(text, 'reflexivity.', 'foo', { bullet: '-', nested: true });
+    expect(after).toContain('    - reflexivity.');
+  });
+
+  it('nested third level bullet (6sp) inside two active bullets', () => {
+    // Two levels of active bullets → third level gets 6 spaces
+    const text = lemma + `\n  - destruct n.\n    - reflexivity.\nAdmitted.`;
+    const after = insertTactic(text, 'reflexivity.', 'foo', { bullet: '-', nested: true });
+    expect(after).toContain('      - reflexivity.');
   });
 });
 

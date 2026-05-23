@@ -1183,6 +1183,13 @@ async function main() {
               ? computeBulletIndent(doc.text, insPos, proofLine)
               : '';
 
+            // When auto-bullet fires inside an active bullet, the new bullet is
+            // nested — indent one level deeper than the text-based heuristic gives.
+            const hasActiveBullet = !!stateResult.goals?.bullet;
+            if (bullet && !hasBullet && hasActiveBullet) {
+              indent += '  ';
+            }
+
             if (bullet && !hasBullet && tactic !== 'Qed.' && tactic !== 'Defined.' && tactic !== 'Admitted.') {
               tactic = `${indent}${bullet} ${tactic}`;
             } else if (atLineStart) {
