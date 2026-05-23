@@ -1183,12 +1183,14 @@ async function main() {
               ? computeBulletIndent(doc.text, insPos, proofLine)
               : '';
 
-            // When auto-bullet fires inside an active bullet AND there are
-            // focus goals (the tactic just created subgoals), the new bullet
-            // is nested — indent one level deeper.
+            // When auto-bullet fires inside an active bullet AND the top stack
+            // level hasn't had any subgoals closed yet (before=0), this is the
+            // first subgoal of a new group — indent one level deeper.
             const hasActiveBullet = !!stateResult.goals?.bullet;
             const nFocusGoals = stateResult.goals?.goals?.length || 0;
-            if (bullet && !hasBullet && hasActiveBullet && nFocusGoals > 0) {
+            const stack = stateResult.goals?.stack || [];
+            const topBefore = stack.length > 0 ? (stack[0]?.[0]?.length || 0) : 0;
+            if (bullet && !hasBullet && hasActiveBullet && nFocusGoals > 0 && topBefore === 0) {
               indent += '  ';
             }
 

@@ -297,17 +297,26 @@ describe('insertTactic with text-based indent', () => {
   });
 
   it('nested bullet indents one level deeper (4sp) when inside active bullet', () => {
-    // Inside an active `-` bullet, destruct creates subgoals → nested `-`
+    // Inside an active `-` bullet, destruct creates subgoals → first nested `-`
     const text = lemma + `\n  - destruct n.\nAdmitted.`;
     const after = insertTactic(text, 'reflexivity.', 'foo', { bullet: '-', nested: true });
     expect(after).toContain('    - reflexivity.');
   });
 
-  it('nested third level bullet (6sp) inside two active bullets', () => {
-    // Two levels of active bullets → third level gets 6 spaces
-    const text = lemma + `\n  - destruct n.\n    - reflexivity.\nAdmitted.`;
+  it('nested third level bullet (6sp) when first of a new group', () => {
+    // Two levels deep, first subgoal of new group
+    const text = lemma + `\n  - destruct n.\n    - destruct n'.\nAdmitted.`;
     const after = insertTactic(text, 'reflexivity.', 'foo', { bullet: '-', nested: true });
     expect(after).toContain('      - reflexivity.');
+  });
+
+  it('continuing nested bullet stays at same level (4sp, not deeper)', () => {
+    // Second subgoal of an existing group — should match previous bullet indent
+    const text = lemma + `\n  - destruct n.\n    - reflexivity.\nAdmitted.`;
+    const after = insertTactic(text, 'auto.', 'foo', { bullet: '-' }); // nested: false
+    expect(after).toContain('    - auto.');
+    // NOT 6 spaces
+    expect(after).not.toContain('      - auto.');
   });
 });
 
