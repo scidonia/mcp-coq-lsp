@@ -45,11 +45,17 @@ async function retryDocumentNotReady<T>(
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       const isNotReady = message.includes('Document is not ready');
+      const isWorkspaceSwitch = message.includes('Switching workspace');
+      const isLspStart = message.includes('LSP client not started');
 
-      if (!isNotReady || Date.now() - start > timeoutMs) {
+      if (!(isNotReady || isWorkspaceSwitch || isLspStart) || Date.now() - start > timeoutMs) {
         throw err;
       }
 
+      // For workspace switches and LSP restarts, use longer initial delays
+      if (isWorkspaceSwitch || isLspStart) {
+        delayMs = Math.max(delayMs, 500);
+      }
       await sleep(delayMs);
       delayMs = Math.min(Math.floor(delayMs * 1.5), maxDelayMs);
     }
@@ -1245,10 +1251,22 @@ async function main() {
             const hasBullet = /^[-+*]+$/.test(firstWord) || firstWord === '{';
 
             // Compute indent from stack depth (only for line-start insertions).
-            // Use stackDepth directly — the bullet prefix itself adds one level of nesting.
+            // When top stack level already has "before" entries, we're continuing
+            // in the same bullet group — use one less indent level.
             const atLineStart = insPos.character === 0;
             const hasActiveBullet = !!stateResult.goals?.bullet;
-            const stackDepth = hasActiveBullet ? (stateResult.goals?.stack || []).length : 0;
+            const stack = stateResult.goals?.stack || [];
+            const rawDepth = hasActiveBullet ? stack.length : 0;
+            // Check if we're continuing (not starting) in the current bullet group.
+            // Use the innermost stack level that has entries.
+            let continuing = false;
+            for (let i = stack.length - 1; i >= 0; i--) {
+              if ((stack[i]?.[0]?.length || 0) > 0 || (stack[i]?.[1]?.length || 0) > 0) {
+                continuing = (stack[i]?.[0]?.length || 0) > 0;
+                break;
+              }
+            }
+            const stackDepth = (hasActiveBullet && continuing) ? Math.max(0, rawDepth - 1) : rawDepth;
             const indent = atLineStart ? '  '.repeat(stackDepth) : '';
 
             if (bullet && !hasBullet && tactic !== 'Qed.' && tactic !== 'Defined.' && tactic !== 'Admitted.') {
