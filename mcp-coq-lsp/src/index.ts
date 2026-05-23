@@ -1344,7 +1344,8 @@ async function main() {
           if (follow_with_goals ?? true) {
             try {
               const updatedDoc = docManager.getDocument(file)!;
-              const goalsQueryPos = safePos(nextTacticPosition, updatedDoc.text);
+              // Query at the Admitted./Qed. line (after all inserted lines), same position focus uses.
+              const goalsQueryPos = safePos({ line: insertedUntil.line, character: 0 }, updatedDoc.text);
               const goalsResult = await retryDocumentNotReady(() =>
                 lspClient.sendRequest<GoalAnswer<string>>('proof/goals', {
                   textDocument: {
