@@ -1183,10 +1183,12 @@ async function main() {
               ? computeBulletIndent(doc.text, insPos, proofLine)
               : '';
 
-            // When auto-bullet fires inside an active bullet, the new bullet is
-            // nested — indent one level deeper than the text-based heuristic gives.
+            // When auto-bullet fires inside an active bullet AND there are
+            // focus goals (the tactic just created subgoals), the new bullet
+            // is nested — indent one level deeper.
             const hasActiveBullet = !!stateResult.goals?.bullet;
-            if (bullet && !hasBullet && hasActiveBullet) {
+            const nFocusGoals = stateResult.goals?.goals?.length || 0;
+            if (bullet && !hasBullet && hasActiveBullet && nFocusGoals > 0) {
               indent += '  ';
             }
 

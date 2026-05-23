@@ -59,9 +59,8 @@ function insertTactic(
 
   const baseIndent = atLineStart ? computeBulletIndent(text, insPos, cursor) : '';
   const b = opts?.bullet ?? undefined;
-  // When auto-bullet fires inside an active bullet, nested → indent one level deeper
-  const nested = opts?.nested ?? false;
-  const indent = (b && nested) ? baseIndent + '  ' : baseIndent;
+  // Nested bullet: auto-bullet + active bullet + focus goals (tactic created subgoals)
+  const indent = (b && opts?.nested) ? baseIndent + '  ' : baseIndent;
   const prefix = b ? `${indent}${b} ` : indent;
   const fullTactic = `${prefix}${tactic}\n`;
 
