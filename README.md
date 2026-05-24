@@ -205,32 +205,64 @@ This MCP (Model Context Protocol) server implements the LSP bridge:
 └──────────────────────────────────────┘
 ```
 
-### 14 MCP Tools for Neurosymbolic Coq
+### MCP Tools for Neurosymbolic Coq
+
+#### Core Proof Interaction Tools
 
 | Tool | Neural Use Case | Symbolic Capability |
 |------|----------------|---------------------|
-| `coq_open_goals` | "What do I need to prove?" | Returns current goals & context |
-| `coq_proof_state` | "What proof am I working on?" | Returns proof name & statements |
-| `coq_get_state_at_pos` | "Save this proof state" | Returns state ID for speculation |
-| `coq_run_tactic` | "Will this tactic work?" | Executes tactic without file edit |
-| `coq_goals_for_state` | "Show me goals after that tactic" | Returns goals for a state ID |
-| `coq_apply_edit` | "Update the proof file" | Applies text edits & re-verifies |
-| `coq_insert_tactic` | "Try this tactic and show results" | Insert + verify + return new goals |
-| `coq_search` | "What lemmas are relevant here?" | Runs speculative `Search` |
-| `coq_check_term` | "What type does this term have?" | Runs speculative `Check` |
-| `coq_about` | "What is this definition?" | Runs speculative `About` |
-| `coq_undo` | "Roll back the last proof steps" | Removes the last N tactics |
-| `coq_try_tactic` | "Try this tactic from the file state" | Single-call speculative tactic run |
+| `coq_focus` | "Let me work on this proof" | Sets cursor to proof, returns full proof tree with goals & bullet stack |
+| `coq_open_goals` | "What do I need to prove?" | Returns current goals & hypotheses at a proof position |
+| `coq_insert_tactic` | "Try this tactic and show results" | Inserts tactic, auto-handles bullets, returns updated goals |
+| `coq_try_tactic` | "Will this tactic work?" | Speculatively executes tactic without modifying file |
+| `coq_undo` | "Roll back the last proof steps" | Removes the last N edit operations |
+| `coq_reset_proof` | "Start this proof over" | Wipes proof body, replaces with fresh Admitted |
+
+#### Proof Navigation & Structure
+
+| Tool | Neural Use Case | Symbolic Capability |
+|------|----------------|---------------------|
+| `coq_add_lemma` | "I need a helper lemma" | Inserts lemma stub above specified proof |
+| `coq_proof_state` | "What proof am I working on?" | Returns proof name, statements & rich context |
+
+#### Knowledge & Search Tools
+
+| Tool | Neural Use Case | Symbolic Capability |
+|------|----------------|---------------------|
+| `coq_search` | "What lemmas are relevant?" | Runs speculative `Search` query |
+| `coq_check_term` | "What type does this have?" | Runs speculative `Check` command |
+| `coq_about` | "Tell me about this definition" | Runs speculative `About` command |
+| `coq_locate` | "Where is this defined?" | Runs speculative `Locate` to find definitions |
+| `coq_require` | "Import this library" | Speculatively imports library for subsequent queries |
+
+#### Low-Level State Management (Pétanque API)
+
+| Tool | Neural Use Case | Symbolic Capability |
+|------|----------------|---------------------|
+| `coq_get_state_at_pos` | "Save this proof state" | Returns opaque state ID at position |
+| `coq_run_tactic` | "Execute against this state" | Runs tactic against state ID, returns new state |
+| `coq_goals_for_state` | "Show goals for this state" | Returns goals for a state ID |
+
+#### File Operations
+
+| Tool | Neural Use Case | Symbolic Capability |
+|------|----------------|---------------------|
+| `coq_apply_edit` | "Update specific text ranges" | Applies LSP-style text edits & re-syncs |
 | `coq_check` | "Is the whole file valid?" | Forces full document checking |
-| `coq_check_range` | "What is wrong in this region?" | Returns diagnostics for a line range |
+| `coq_check_range` | "What's wrong in this region?" | Returns diagnostics for specific line range |
 
-### Current Server Behavior
+### Current Server Capabilities
 
-- **Dynamic workspace switching**: opening a file from another Coq project restarts `rocq-lsp` under the correct project root.
-- **Project-root detection**: walks upward looking for `_CoqProject`, `_RocqProject`, or `dune-project`.
-- **Readable goal output**: goal responses are formatted for MCP clients with hypotheses first and the goal rendered in a compact single-line form.
-- **Speculative proof search**: both low-level Petanque state APIs and higher-level single-call helpers are available.
-- **Lifecycle hardening**: the LSP client waits for readiness, guards overlapping restarts, and retries transient "Document is not ready" states.
+- **Dynamic workspace switching**: opening a file from another Coq project restarts `rocq-lsp` under the correct project root
+- **Project-root detection**: walks upward looking for `_CoqProject`, `_RocqProject`, or `dune-project`
+- **Readable goal output**: goal responses are formatted for MCP clients with hypotheses first and goal rendered compactly
+- **Automatic bullet management**: `coq_insert_tactic` auto-prepends bullet prefixes (-, +, *) when the proof state requires them
+- **Speculative execution**: both low-level Pétanque state APIs and higher-level single-call helpers (`coq_try_tactic`)
+- **Proof navigation**: `coq_focus` returns complete proof tree including bullet stack depth and proof script
+- **Helper lemma insertion**: `coq_add_lemma` inserts lemma stubs at the correct position in the file
+- **Safe undo/reset**: `coq_undo` tracks edit operations (not just tactics), `coq_reset_proof` wipes proof to Admitted
+- **Library management**: `coq_require` speculatively imports libraries for use in queries without modifying the file
+- **Lifecycle hardening**: the LSP client waits for readiness, guards overlapping restarts, and retries transient states
 
 ## Benefits of This Approach
 
@@ -317,9 +349,37 @@ OpenCode: [Iteratively builds the proof using LSP feedback]
 OpenCode: "Proof complete! Here's what I did..."
 ```
 
-## Example Session
+## Real Proof Example: Preservation Theorem
 
-See `mcp-coq-lsp/example.v` for a complete example with:
+The repository includes a complete, working example in `mcp-coq-lsp/test_issues.v` demonstrating:
+
+**Theorem**: Type preservation for PCF with references
+```coq
+Theorem preservation : forall t mu t' mu' T S,
+  has_type [] S t T -> step t mu t' mu' ->
+  heap_ok mu S ->
+  exists S', extends S' S /\ heap_ok mu' S' /\ has_type [] S' t' T.
+```
+
+**Proof completed using only MCP tools**:
+- ✅ 7 lemmas proved (extends_refl, nth_error_extends, weakening_store, substitution_preserves_typing_0, heap_lookup_type, heap_update_ok, **preservation**)
+- ✅ All 21 cases of the induction on step relation completed
+- ✅ Main preservation theorem fully closed with **Qed**
+- ✅ Proper use of: inversion, induction, weakening lemmas, store extension, heap invariants
+
+The LLM successfully:
+1. Identified necessary helper lemmas (extends_refl, nth_error_extends, weakening_store, etc.)
+2. Proved each lemma using appropriate tactics
+3. Structured the main proof by induction on the step relation
+4. Handled complex cases (S_RefV with store extension, S_DerefLoc with heap lookup)
+5. Applied weakening lemmas where needed to adjust contexts
+6. Managed bullet-structured subgoals across 21 cases
+
+This demonstrates **neurosymbolic theorem proving in action**: the LLM proposes tactics guided by patterns, while Coq verifies each step is logically sound.
+
+## Additional Examples
+
+See `mcp-coq-lsp/example.v` for simpler examples including:
 - A finished proof (to query goals)
 - An incomplete proof (to practice tactics)
 - Test cases for each MCP tool
@@ -337,11 +397,23 @@ This LSP-based architecture represents a paradigm shift:
 **From**: "Formal verification is for experts"  
 **To**: "LLMs make formal methods accessible"
 
-As LLMs improve and proof assistants expose richer APIs, we expect:
+### What's Already Possible
+
+As demonstrated by the preservation theorem proof in this repository:
+- ✅ **LLM-driven theorem proving**: Complete non-trivial proofs (21 cases, multiple helper lemmas)
+- ✅ **Strategic proof planning**: Identifying needed lemmas and structuring induction proofs
+- ✅ **Interactive refinement**: Real-time tactic application with immediate verification feedback
+- ✅ **Error recovery**: Adjusting tactics based on Coq's structured error messages
+- ✅ **Proof management**: Adding lemmas, resetting proofs, undoing operations
+
+### What's Coming
+
+As LLMs improve and proof assistants expose richer APIs:
 - **Automated formalization** of mathematical papers
-- **AI-assisted discovery** of new theorems
+- **AI-assisted discovery** of new theorems  
 - **Verified AI systems** with formal safety guarantees
 - **Natural language to formal proof** translation
+- **Large-scale formal verification** of real-world software
 
 ## Learn More
 

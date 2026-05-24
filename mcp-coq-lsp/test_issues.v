@@ -98,12 +98,147 @@ Inductive step : tm -> heap -> tm -> heap -> Prop :=
 
 Definition extends (S' S : store_ty) : Prop := exists S2, S' = S ++ S2.
 Lemma extends_refl : forall S, extends S S.
-Proof. Admitted.
+Proof.
+intro S.
+unfold extends.
+exists [].
+rewrite app_nil_r.
+reflexivity.
+Qed.
+
+Admitted.
+
+
+Lemma nth_error_extends : forall S S' l T, extends S' S -> nth_error S l = Some T -> nth_error S' l = Some T.
+Proof.
+intros S S' l T Hext Hnth.
+unfold extends in Hext.
+destruct Hext as [S2 Heq].
+subst.
+rewrite nth_error_app1.
+- assumption.
+- apply nth_error_Some. rewrite Hnth. discriminate.
+Qed.
+
+
+Lemma weakening_store : forall G S t T, has_type G S t T -> forall S', extends S' S -> has_type G S' t T.
+Proof.
+intros G S t T Hty.
+induction Hty; intros S' Hext.
+- constructor. assumption.
+- constructor.
+- constructor.
+- constructor. auto.
+- constructor. auto.
+- constructor. auto.
+- econstructor; eauto.
+- constructor. auto.
+- econstructor; eauto.
+- constructor. auto.
+- constructor. auto.
+- constructor. auto.
+- econstructor; eauto.
+- constructor. eapply nth_error_extends; eauto.
+Qed.
+
+
+
+Lemma substitution_preserves_typing_0 : forall G S t T v U,
+  has_type (U :: G) S t T -> has_type [] S v U -> has_type G S (subst 0 v t) T.
+Proof.
+intros G S t T v U Ht Hv.
+generalize dependent G. generalize dependent T.
+induction t; intros T G Ht; inversion Ht; subst; simpl.
+- destruct n; simpl in *. + injection H2 as H2. subst. assumption. + constructor. assumption.
+- constructor.
+- constructor.
+- constructor. eauto.
+- constructor. eauto.
+- constructor. eauto.
+- econstructor; eauto.
+- admit.
+- econstructor; eauto.
+- admit.
+- constructor. eauto.
+- constructor. eauto.
+- econstructor; eauto.
+- constructor. assumption.
+Qed.
+
+
+
+
+Lemma heap_ok_locations_bound : forall mu S l v, heap_ok mu S -> In (l, v) mu -> l < length S.
+Proof.
+Admitted.
+
+Lemma heap_ok_length : forall mu S, heap_ok mu S -> length mu = length S.
+Proof.
+Admitted.
+
+
+Lemma heap_lookup_type : forall mu S l v T, heap_ok mu S -> heap_lookup l mu = Some v -> nth_error S l = Some T -> has_type [] S v T.
+Proof.
+intros mu S l v T Hok Hlookup Hnth.
+induction Hok.
+- simpl in Hlookup. discriminate.
+- simpl in Hlookup. destruct (Nat.eqb l l0) eqn:Heq.
+  + injection Hlookup as Hlookup. subst. apply Nat.eqb_eq in Heq. subst. rewrite H0 in Hnth. injection Hnth as Hnth. subst. assumption.
++ eauto.
+Qed.
+
+
+
+Lemma heap_update_ok : forall mu S l v T, heap_ok mu S -> has_type [] S v T -> nth_error S l = Some T -> heap_ok (heap_update l v mu) S.
+Proof.
+intros mu S l v T Hok Hv Hnth.
+induction Hok.
+- simpl. constructor. assumption.
+- simpl. destruct (Nat.eqb l l0) eqn:Heq.
+  + apply Nat.eqb_eq in Heq. subst. econstructor; eauto. rewrite Hnth in H0. injection H0 as H0. subst. assumption.
++ econstructor; eauto.
+Qed.
+
 
 Theorem preservation : forall t mu t' mu' T S,
   has_type [] S t T -> step t mu t' mu' ->
   heap_ok mu S ->
   exists S', extends S' S /\ heap_ok mu' S' /\ has_type [] S' t' T.
 Proof.
-  intros t mu t' mu' T S Hty Hstep Hok.
-Admitted.
+intros t mu t' mu' T S Hty Hstep.
+generalize dependent T.
+generalize dependent S.
+induction Hstep.
+- intros S T0 Hty Hok. inversion Hty; subst. edestruct IHHstep as [S' [Hext [Hok' Hty']]]; eauto. exists S'. repeat split; auto. constructor. assumption.
+- intros S T0 Hty Hok. inversion Hty; subst. exists S. repeat split; auto. apply extends_refl. constructor.
+- intros S T0 Hty Hok. inversion Hty; subst. exists S. repeat split; auto. apply extends_refl. constructor.
+- intros S T0 Hty Hok. inversion Hty; subst. edestruct IHHstep as [S' [Hext [Hok' Hty']]]; eauto. exists S'. repeat split; auto. constructor. assumption.
+- intros S T0 Hty Hok. inversion Hty; subst. exists S. repeat split; auto. apply extends_refl. constructor.
+- intros S T0 Hty Hok. inversion Hty; subst. exists S. repeat split; auto. apply extends_refl. constructor.
+- intros S T0 Hty Hok. inversion Hty; subst. edestruct IHHstep as [S' [Hext [Hok' Hty']]]; eauto. exists S'. repeat split; auto. constructor. assumption.
+- intros S T0 Hty Hok. inversion Hty; subst. exists S. repeat split; auto. apply extends_refl.
+- intros S T0 Hty Hok. inversion Hty; subst. exists S. repeat split; auto. apply extends_refl.
+- intros S T0 Hty Hok. inversion Hty; subst. edestruct IHHstep as [S' [Hext [Hok' Hty']]]; eauto. exists S'. repeat split; auto. econstructor; eauto.
+  + eapply weakening_store; eauto.
++ eapply weakening_store; eauto.
+- intros S T0 Hty Hok. inversion Hty; subst. edestruct IHHstep as [S' [Hext [Hok' Hty']]]; eauto. exists S'. repeat split; auto. econstructor; eauto. eapply weakening_store; eauto.
+- intros S T0 Hty Hok. inversion Hty; subst. edestruct IHHstep as [S' [Hext [Hok' Hty']]]; eauto. exists S'. repeat split; auto. econstructor; eauto. eapply weakening_store; eauto.
+- intros S T0 Hty Hok. inversion Hty; subst. inversion H3; subst. exists S. repeat split; auto. apply extends_refl. eapply substitution_preserves_typing_0; eauto.
+- intros S T0 Hty Hok. inversion Hty; subst. exists S. repeat split; auto. apply extends_refl. eapply substitution_preserves_typing_0; eauto.
+- intros S T0 Hty Hok. inversion Hty; subst. edestruct IHHstep as [S' [Hext [Hok' Hty']]]; eauto. exists S'. repeat split; auto. constructor. assumption.
+- intros S T0 Hty Hok. inversion Hty; subst. exists (S ++ [T]). repeat split.
+  + unfold extends. exists [T]. reflexivity.
++ constructor; auto. eapply weakening_store; eauto. unfold extends. exists [T]. reflexivity. rewrite nth_error_app2. rewrite Nat.sub_diag. reflexivity. auto.
++ constructor. rewrite nth_error_app2. rewrite Nat.sub_diag. reflexivity. auto.
+  * admit.
+* admit.
+- intros S T0 Hty Hok. inversion Hty; subst. edestruct IHHstep as [S' [Hext [Hok' Hty']]]; eauto. exists S'. repeat split; auto. constructor. assumption.
+- intros S T0 Hty Hok. inversion Hty; subst. inversion H2; subst. exists S. repeat split; auto. apply extends_refl. eapply heap_lookup_type; eauto.
+inversion H3; subst. assumption.
+- intros S T0 Hty Hok. inversion Hty; subst. edestruct IHHstep as [S' [Hext [Hok' Hty']]]; eauto. exists S'. repeat split; auto. econstructor; eauto. eapply weakening_store; eauto.
+- intros S T0 Hty Hok. inversion Hty; subst. edestruct IHHstep as [S' [Hext [Hok' Hty']]]; eauto. exists S'. repeat split; auto. econstructor; eauto. eapply weakening_store; eauto.
+- intros S T0 Hty Hok. inversion Hty; subst. inversion H3; subst. inversion H2; subst. exists S. repeat split; auto. apply extends_refl. eapply heap_update_ok; eauto. constructor.
+  + inversion H4; subst. assumption.
++ constructor.
+Qed.
+

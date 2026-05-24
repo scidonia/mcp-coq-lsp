@@ -29,7 +29,7 @@ This document provides guidance for completing Coq/Rocq proofs using the `coq-ls
 | `coq_add_lemma` | Insert a lemma stub (Lemma name : statement. Proof. Admitted.) above a specified proof. Use `before` to name the proof it goes above. |
 | `coq_reset_proof` | Wipe a proof body (from Proof. to Qed./Admitted.) and replace with fresh Admitted. Use to restart a broken proof. |
 
-### Exploration
+### Exploration & Library Management
 
 | Tool | Purpose |
 |------|---------|
@@ -37,7 +37,7 @@ This document provides guidance for completing Coq/Rocq proofs using the `coq-ls
 | `coq_check_term` | Check the type of a term speculatively. Runs `Check <term>.` |
 | `coq_about` | Get information about a term/definition speculatively. Runs `About <term>.` |
 | `coq_locate` | Find where a library, module, or term is defined. Useful before Require to check if a module exists. |
-| `coq_require` | Require a library speculatively. Subsequent speculative queries on the same file will see the library. |
+| `coq_require` | **Import a library speculatively without modifying the file.** All subsequent speculative queries (search, check, try_tactic) on that file will see the imported library. Use this to explore what lemmas are available before committing to a Require statement. |
 
 ### File Editing
 
@@ -55,7 +55,25 @@ Use `coq_focus` on the theorem to see the goal and proof context.
 coq_focus name="my_theorem" file="path/file.v"
 ```
 
-### 2. Plan the induction
+### 2. Import needed libraries
+
+If you need libraries that aren't already imported in the file, use `coq_require` to speculatively import them:
+
+```coq
+coq_require file="path/file.v" lib="Coq.Lists.List"
+coq_require file="path/file.v" lib="Coq.Arith.Arith"
+```
+
+Now you can use `coq_search` to find lemmas from these libraries:
+
+```coq
+coq_search file="path/file.v" pattern="(_ ++ [])"
+# Returns: app_nil_r : forall l : list A, l ++ [] = l
+```
+
+**Important**: `coq_require` does NOT modify the file. Once your proof works, manually add the `Require Import` statement to the actual file.
+
+### 3. Plan the induction
 
 Most Coq theorems about inductive relations are proved by induction on the relation itself.
 - `induction Hstep` — if proving a step relation property
@@ -77,9 +95,27 @@ For inductive cases, `destruct (IH...)` to get the induction hypothesis, then co
   exists S'. split. exact Hext. ...
 ```
 
-### 5. Add lemmas only when needed
+### 5. Search for existing lemmas first
 
-When a case fails because a helper property is missing, add it with `coq_add_lemma`:
+Before writing a new lemma, search to see if it already exists:
+
+```coq
+coq_search file="path/file.v" pattern="(_ + 0)"
+coq_search file="path/file.v" pattern="nth_error (_ ++ _)"
+```
+
+If the lemma you need is in a library that's not imported:
+
+```coq
+coq_locate file="path/file.v" thing="Coq.Lists.List"
+coq_require file="path/file.v" lib="Coq.Lists.List"
+coq_search file="path/file.v" pattern="(_ ++ [])"  # Now finds app_nil_r
+```
+
+### 6. Add lemmas only when needed
+
+When a case fails because a helper property is truly missing (not in standard libraries), add it with `coq_add_lemma`:
+
 ```coq
 coq_add_lemma name="my_lemma" statement="forall x, P x"
               before="main_theorem" file="path/file.v"
@@ -170,6 +206,76 @@ When proving a large theorem, add lemmas in dependency order:
 | `heap_ok_lookup` | S_DerefLoc | Well-formed heap has typed entries |
 | `substitution_preserves_typing` | S_AppAbs, S_Fix | Substitution preserves types |
 | `heap_ok_update` | S_AssignV | Heap update preserves well-formedness |
+
+## Working with Libraries
+
+### Workflow for discovering and using library lemmas
+
+1. **Check if a library exists**:
+   ```coq
+   coq_locate file="proof.v" thing="Coq.Lists.List"
+   # Returns: Module Coq.Lists.List
+   ```
+
+2. **Speculatively import the library**:
+   ```coq
+   coq_require file="proof.v" lib="Coq.Lists.List"
+   # Returns: Imported Coq.Lists.List — available for subsequent queries on proof.v
+   ```
+
+3. **Search for lemmas you need**:
+   ```coq
+   coq_search file="proof.v" pattern="(_ ++ [])"
+   # Returns: app_nil_r : forall l : list A, l ++ [] = l
+   
+   coq_search file="proof.v" pattern="length (_ ++ _)"
+   # Returns: app_length : forall l l', length (l ++ l') = length l + length l'
+   ```
+
+4. **Test tactics using the library**:
+   ```coq
+   coq_try_tactic file="proof.v" name="my_theorem" tactic="rewrite app_nil_r."
+   # Tests if the tactic works without modifying the file
+   ```
+
+5. **Once verified, add to file**:
+   After your proof works with the speculative import, manually add at the top of the file:
+   ```coq
+   Require Import Coq.Lists.List.
+   ```
+
+### Common standard libraries
+
+| Library | Import Statement | Contains |
+|---------|------------------|----------|
+| Lists | `Coq.Lists.List` | List operations, lemmas (app, length, nth, etc.) |
+| Arith | `Coq.Arith.Arith` | Natural number arithmetic, comparison |
+| Bool | `Coq.Bool.Bool` | Boolean operations and lemmas |
+| Lia | `Coq.micromega.Lia` | Linear integer arithmetic solver (lia tactic) |
+| Omega | `Coq.omega.Omega` | Older arithmetic solver (omega tactic) |
+| Program | `Coq.Program.Tactics` | Program mode tactics |
+
+### Multiple libraries
+
+You can import multiple libraries for the same file:
+
+```coq
+coq_require file="proof.v" lib="Coq.Lists.List"
+coq_require file="proof.v" lib="Coq.Arith.Arith"
+coq_require file="proof.v" lib="Coq.micromega.Lia"
+
+# Now all three are available for queries on proof.v
+coq_search file="proof.v" pattern="(_ + 0)"  # Finds Arith lemmas
+coq_search file="proof.v" pattern="(_ ++ _)"  # Finds List lemmas
+```
+
+### Persistence
+
+Speculative imports persist for the entire MCP session:
+- Once you `coq_require` a library for a file, all subsequent queries on that file see it
+- The imports are tracked per-file URI
+- Restarting the MCP server clears the cache
+- The actual `.v` file is never modified — you must manually add `Require Import` statements
 
 ## Troubleshooting
 
