@@ -1130,6 +1130,19 @@ async function main() {
           await docManager.updateDocument(file, newText);
           await docManager.saveDocument(file);
 
+          // Force LSP to re-process after bulk edit to prevent stale state
+          try {
+            const updatedDoc = docManager.getDocument(file)!;
+            await retryDocumentNotReady(() =>
+              lspClient.sendRequest('proof/goals', {
+                textDocument: { uri: updatedDoc.uri, version: updatedDoc.version },
+                position: { line: 0, character: 0 },
+                pp_format: 'Str',
+                mode: 'After',
+              })
+            );
+          } catch { /* best-effort re-sync */ }
+
           const updatedDoc = docManager.getDocument(file)!;
 
           const summary = find !== undefined
