@@ -1744,9 +1744,10 @@ async function main() {
             : nBg > 0 ? `${nFocus} at focus, ${nBg} in background (bullet open)`
             : `${nFocus} goal(s)`;
 
-          // Auto-re-seal: if admit_hash was used and the bullet isn't closed,
-          // re-add admit. so the proof stays valid.
-          if (admit_hash && nFocus > 0 && gcAfter !== undefined && !hasErrors) {
+          // Auto-re-seal: if admit_hash was used, re-seal the bullet with admit.
+          // (The tactic may not close the bullet, and the LSP reports 0 focus
+          // under the parent Admitted., so we always seal.)
+          if (admit_hash && !hasErrors) {
             const sealTactic = 'admit.\n';
             const currentDoc = docManager.getDocument(file);
             if (currentDoc) {
