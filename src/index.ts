@@ -1408,7 +1408,7 @@ async function main() {
                   st: stateR.st, opts: { compact: true },
                 });
                 const goalText = (goalsR.goals || []).map(g => (g.ty || '').replace(/\s+/g, ' ')).join(' | ');
-                const h = createHash('md5').update(goalText).digest('hex').slice(0, 8);
+                const h = createHash("md5").update(`${line}:${goalText}`).digest("hex").slice(0, 8);
                 if (h === admit_hash) { targetLine = line; break; }
               } catch {}
             }
@@ -2729,7 +2729,7 @@ async function main() {
                 opts: { compact: true },
               });
               const goalText = (goalsR.goals || []).map(g => (g.ty || '').replace(/\s+/g, ' ')).join(' | ');
-              const hash = createHash('md5').update(goalText).digest('hex').slice(0, 8);
+              const hash = createHash("md5").update(`${line}:${goalText}`).digest("hex").slice(0, 8);
               admitted.push({ hash, line: line + 1, goal: goalText || '(no goals)' });
             } catch {
               admitted.push({ hash: 'error', line: line + 1, goal: '(could not query)' });
@@ -2767,7 +2767,7 @@ async function main() {
                 opts: { compact: true },
               });
               const goalText = (goalsR.goals || []).map(g => (g.ty || '').replace(/\s+/g, ' ')).join(' | ');
-              const h = createHash('md5').update(goalText).digest('hex').slice(0, 8);
+              const h = createHash("md5").update(`${line}:${goalText}`).digest("hex").slice(0, 8);
               if (h === hash) { targetLine = line; break; }
             } catch {}
           }
