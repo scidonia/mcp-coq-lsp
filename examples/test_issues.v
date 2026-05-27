@@ -120,25 +120,27 @@ Qed.
 Lemma has_type_weaken : forall G S1 S2 t T, has_type G S1 t T -> extends S2 S1 -> has_type G S2 t T.
 Proof.
   intros G S1 S2 t T Hty Hext.
-  unfold extends in Hext. destruct Hext as [Sx HSx]. subst.
-  induction Hty.
-  - apply T_Var. exact H.
+  unfold extends in Hext. destruct Hext as [Sx ->].
+  revert Sx.
+  induction Hty; intros Sx.
+  - apply T_Var; auto.
   - apply T_Num.
   - apply T_Bool.
-  - apply T_Succ. apply IHHty. unfold extends. exists Sx. reflexivity.
-  - apply T_Pred. apply IHHty. unfold extends. exists Sx. reflexivity.
-  - apply T_IsZero. apply IHHty. unfold extends. exists Sx. reflexivity.
+  - apply T_Succ; apply IHHty; unfold extends; exists Sx; reflexivity.
+  - apply T_Pred; apply IHHty; unfold extends; exists Sx; reflexivity.
+  - apply T_IsZero; apply IHHty; unfold extends; exists Sx; reflexivity.
   - apply T_If; [apply IHHty1 | apply IHHty2 | apply IHHty3];
     unfold extends; exists Sx; reflexivity.
-  - apply T_Lam. apply IHHty. unfold extends. exists Sx. reflexivity.
-  - apply T_App; [apply IHHty1 | apply IHHty2];
+  - apply T_Lam with (T1 := T1) (T2 := T2); apply IHHty;
     unfold extends; exists Sx; reflexivity.
-  - apply T_Fix. apply IHHty. unfold extends. exists Sx. reflexivity.
-  - apply T_Ref. apply IHHty. unfold extends. exists Sx. reflexivity.
-  - apply T_Deref. apply IHHty. unfold extends. exists Sx. reflexivity.
+  - apply T_App with (T1 := T1); [apply IHHty1 | apply IHHty2];
+    unfold extends; exists Sx; reflexivity.
+  - apply T_Fix; apply IHHty; unfold extends; exists Sx; reflexivity.
+  - apply T_Ref; apply IHHty; unfold extends; exists Sx; reflexivity.
+  - apply T_Deref; apply IHHty; unfold extends; exists Sx; reflexivity.
   - apply T_Assign; [apply IHHty1 | apply IHHty2];
     unfold extends; exists Sx; reflexivity.
-  - apply T_Loc. apply nth_error_app_l with (l1 := S). exact H.
+  - apply T_Loc; apply nth_error_app_l with (l1 := S1); exact H.
 Qed.
 
 
@@ -166,6 +168,68 @@ Proof.
     + injection Hlook; intros; subst.
       exists T; split; auto. exact H0.
     + apply IHheap_ok. exact Hlook.
+Qed.
+
+Lemma extends_heap_ok : forall mu S S',
+  heap_ok mu S -> extends S' S -> heap_ok mu S'.
+Proof.
+  intros mu S S' Hok Hext.
+  unfold extends in Hext. destruct Hext as [Sx ->].
+  induction Hok.
+  - apply heap_empty.
+  - apply heap_cons with (T := T); auto.
+    apply nth_error_app_l; auto.
+Qed.
+
+Lemma heap_ok_update : forall mu S l v T,
+  heap_ok mu S -> nth_error S l = Some T -> has_type [] S v T ->
+  heap_ok (heap_update l v mu) S.
+Proof.
+  induction 1; intros k u T0 Hnth Hty; simpl.
+  - inversion Hnth.
+  - destruct (Nat.eqb l0 k) eqn:Heq.
+    + apply heap_cons with (T := T0); auto.
+      apply Nat.eqb_eq in Heq; subst.
+      eapply nth_error_Some_nth. exact Hnth.
+      exact Hty.
+    + apply heap_cons with (T := T); auto.
+      eapply IHheap_ok; eauto.
+Qed.
+
+Lemma substitution_preserves_typing : forall S t T U s,
+  has_type [U] S t T -> has_type [] S s U -> has_type [] S (subst 0 s t) T.
+Proof.
+  intros S t T U s Hty Hsty. remember [U] as G. revert U HeqG.
+  induction Hty; intros U' HeqU Hsty'; simpl; injection HeqU as ?; subst G.
+  - (* T_Num *) apply T_Num.
+  - (* T_Bool *) apply T_Bool.
+  - (* T_Var *)
+    destruct x; simpl in H.
+    + injection H; intros; subst. exact Hsty'.
+    + discriminate.
+  - (* T_Succ *) apply T_Succ. apply IHHty; auto.
+  - (* T_Pred *) apply T_Pred. apply IHHty; auto.
+  - (* T_IsZero *) apply T_IsZero. apply IHHty; auto.
+  - (* T_If *)
+    apply T_If; [apply IHHty1 | apply IHHty2 | apply IHHty3]; auto.
+  - (* T_Lam *)
+    apply T_Lam. apply IHHty. reflexivity. exact Hsty'.
+  - (* T_App *) apply T_App; [apply IHHty1 | apply IHHty2]; auto.
+  - (* T_Fix *)
+    apply T_Fix. apply IHHty. reflexivity. exact Hsty'.
+  - (* T_Ref *) apply T_Ref. apply IHHty; auto.
+  - (* T_Deref *) apply T_Deref. apply IHHty; auto.
+  - (* T_Assign *)
+    apply T_Assign with (T := T); [apply IHHty1 | apply IHHty2]; auto.
+  - (* T_Loc *)
+    apply T_Loc. exact H.
+Qed.
+
+Lemma nth_error_last : forall A (l : list A) (x : A),
+  nth_error (l ++ [x]) (length l) = Some x.
+Proof.
+  intros A l x. rewrite nth_error_app2 by lia.
+  replace (length l - length l) with 0 by lia. simpl. reflexivity.
 Qed.
 
 Theorem preservation : forall t mu t' mu' T S,
@@ -210,16 +274,39 @@ Proof.
     destruct (IHHstep T1 S H6 Hok) as [S' [Hext [Hok' Hty']]].
     exists S'; split; [exact Hext | split; [exact Hok' |
       apply T_App with (T1 := T1); [apply has_type_weaken with (S1 := S); [exact H4 | exact Hext] | exact Hty'] ] ].
-  - (* S_AppAbs *) admit.
-  - (* S_Fix *) admit.
+  - (* S_AppAbs *)
+    intros T S Hty Hok. inversion Hty; subst.
+    inversion H; subst. inversion H2; subst.
+    exists S; split; [apply extends_refl | split; [exact Hok |
+      apply substitution_preserves_typing with (U := T1); [exact H6 | exact H7] ] ].
+  - (* S_Fix *)
+    intros T S Hty Hok. inversion Hty; subst.
+    exists S; split; [apply extends_refl | split; [exact Hok |
+      apply substitution_preserves_typing with (U := T); [exact H | apply T_Fix; exact H] ] ].
   - (* S_Ref *) intros T S Hty Hok. inversion Hty; subst.
     destruct (IHHstep T S H4 Hok) as [S' [Hext [Hok' Hty']]].
     exists S'; split; [exact Hext | split; [exact Hok' | apply T_Ref; exact Hty']].
-  - (* S_RefV *) 
+  - (* S_RefV *)
+    intros T S Hty Hok. inversion Hty; subst.
+    inversion H2; subst.
+    exists (S ++ [T]).
+    split. { unfold extends. exists [T]. reflexivity. }
+    split.
+    { apply heap_cons with (T := T).
+      - apply extends_heap_ok with (S := S); auto.
+        unfold extends. exists []. apply app_nil_r.
+      - apply has_type_weaken with (S1 := S); [exact H4 | unfold extends; exists [T]; reflexivity].
+      - apply nth_error_last. }
+    { apply T_Loc. apply nth_error_last. }
   - (* S_Deref *) intros T S Hty Hok. inversion Hty; subst.
     destruct (IHHstep (TyRef T) S H4 Hok) as [S' [Hext [Hok' Hty']]].
     exists S'; split; [exact Hext | split; [exact Hok' | apply T_Deref; exact Hty']].
-  - (* S_DerefLoc *) 
+  - (* S_DerefLoc *)
+    intros T S Hty Hok. inversion Hty; subst.
+    inversion H3; subst.
+    destruct (heap_ok_lookup mu S l v Hok H) as [T0 [Hnth Htyv]].
+    exists S; split; [apply extends_refl | split; [exact Hok |
+      injection Hnth; intros; subst; exact Htyv] ].
   - (* S_Assign1 *) intros T S Hty Hok. inversion Hty; subst.
     destruct (IHHstep (TyRef T0) S H4 Hok) as [S' [Hext [Hok' Hty']]].
     exists S'; split; [exact Hext | split; [exact Hok' |
@@ -229,6 +316,10 @@ Proof.
     destruct (IHHstep T0 S H6 Hok) as [S' [Hext [Hok' Hty']]].
     exists S'; split; [exact Hext | split; [exact Hok' |
       apply T_Assign with (T := T0); [apply has_type_weaken with (S1 := S); [exact H4 | exact Hext] | exact Hty'] ] ].
-  - (* S_AssignV *) 
-  admit.
-Admitted.
+  - (* S_AssignV *)
+    intros T S Hty Hok. inversion Hty; subst.
+    inversion H2; subst.
+    exists S; split; [apply extends_refl | split; [
+      apply heap_ok_update with (T := T0); [exact Hok | apply H4 | exact H5] |
+      apply T_Num] ].
+Qed.
