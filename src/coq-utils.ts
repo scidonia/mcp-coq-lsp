@@ -1,4 +1,5 @@
 import type { Position } from './types.js';
+import { applyTextEdits } from './document-manager.js';
 
 /** Skip lines that are blank, comments, Proof., or Proof. with trailing comment. */
 export function isSkipLine(line: string): boolean {
@@ -184,4 +185,42 @@ export function admitPrefix(line: string): string {
 export function bulletInsertPos(line: string): number {
   const match = line.match(/^\s*[-+*]+(?:\s)/);
   return match ? match[0].length : 0;
+}
+
+/**
+ * Replace an admit. line with a new tactic + re-seal admit.
+ * Given text and the line number of an admit., replaces that line
+ * with the bullet prefix, inserts the tactic at the right position,
+ * and re-seals with admit. afterwards.
+ *
+ * Returns the new text, or the original if the line wasn't an admit.
+ */
+export function replaceAdmitLine(
+  text: string,
+  admitLine: number,
+  tactic: string
+): string {
+  const lines = text.split('\n');
+  const line = lines[admitLine] || '';
+  const prefix = admitPrefix(line);
+  if (!line.includes('admit.')) return text;
+
+  // Remove admit line, keep bullet prefix
+  let result = applyTextEdits(text, [{
+    range: { start: { line: admitLine, character: 0 }, end: { line: admitLine + 1, character: 0 } },
+    newText: prefix ? `${prefix}\n` : '',
+  }]);
+
+  // Insert tactic after bullet prefix, then append admit.
+  const insertPos = bulletInsertPos(line);
+  const tacticLine = prefix
+    ? prefix.substring(0, insertPos) + tactic + '\n  ' + 'admit.'
+    : tactic + '\nadmit.';
+
+  result = applyTextEdits(result, [{
+    range: { start: { line: admitLine, character: 0 }, end: { line: admitLine + 1, character: 0 } },
+    newText: tacticLine + '\n',
+  }]);
+
+  return result;
 }

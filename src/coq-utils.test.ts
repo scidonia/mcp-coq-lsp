@@ -3,7 +3,7 @@ import {
   isSkipLine, isProofEndLine, isTopLevelLine,
   autoAdvancePosition, insertPosition, findProofLine,
   computeBulletIndent, proofBounds, findAdmitLines,
-  admitPrefix, bulletInsertPos,
+  admitPrefix, bulletInsertPos, replaceAdmitLine,
 } from './coq-utils.js';
 import { applyTextEdits } from './document-manager.js';
 
@@ -822,5 +822,68 @@ describe('bulletInsertPos', () => {
   });
   it('returns indent+2 for "  - " (single level)', () => {
     expect(bulletInsertPos('  - ')).toBe(4);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// replaceAdmitLine — full admit replacement + tactic + re-seal
+// ═══════════════════════════════════════════════════════════════════
+
+describe('replaceAdmitLine', () => {
+  const proof = [
+    'Lemma foo : True /\\ True.',
+    'Proof.',
+    '  split.',
+    '  - admit.',
+    '  - admit.',
+    'Admitted.',
+  ].join('\n');
+
+  it('replaces - admit. with - exact I. + re-seal admit', () => {
+    const lines = proof.split('\n');
+    const admitLine = lines.findIndex(l => l.includes('admit.'));
+    expect(lines[admitLine]).toContain('- admit.');
+    const result = replaceAdmitLine(proof, admitLine, 'exact I.');
+    expect(result).toContain('- exact I.');
+    expect(result).toContain('admit.');  // re-seal
+  });
+
+  it('replaces + admit. with + split. + re-seal', () => {
+    const deeper = [
+      'Lemma bar : True /\\ True.',
+      'Proof.',
+      '  split.',
+      '  - exact I.',
+      '  - split.',
+      '    + admit.',
+      '    + admit.',
+      'Admitted.',
+    ].join('\n');
+    const lines = deeper.split('\n');
+    const admitLine = lines.findIndex(l => l.includes('+ admit.'));
+    expect(lines[admitLine]).toContain('+ admit.');
+    const result = replaceAdmitLine(deeper, admitLine, 'split.');
+    expect(result).toContain('+ split.');
+    expect(result).toContain('admit.');  // re-seal
+  });
+
+  it('returns original text if line is not an admit', () => {
+    const result = replaceAdmitLine(proof, 0, 'reflexivity.');
+    expect(result).toBe(proof);
+  });
+
+  it('tactic line uses correct bullet prefix', () => {
+    const deeper = [
+      'Lemma baz : True.',
+      'Proof.',
+      '    * admit.',
+      'Admitted.',
+    ].join('\n');
+    const lines = deeper.split('\n');
+    const admitLine = lines.findIndex(l => l.includes('admit.'));
+    const result = replaceAdmitLine(deeper, admitLine, 'exact I.');
+    const rLines = result.split('\n');
+    const tacticLine = rLines.find(l => l.includes('exact I.'));
+    expect(tacticLine).toContain('* exact I.');
   });
 });
