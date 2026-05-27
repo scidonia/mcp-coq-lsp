@@ -175,3 +175,13 @@ export function admitPrefix(line: string): string {
   if (idx < 0) return '';
   return line.substring(0, idx);
 }
+
+/**
+ * Compute the insert position after a bullet marker on a reopened admit line.
+ * For "  + " returns { character: 4 }. For bare "" returns { character: 0 }.
+ * Called by insert_tactic after replace_admit reopens a bullet.
+ */
+export function bulletInsertPos(line: string): number {
+  const match = line.match(/^\s*[-+*]+(?:\s)/);
+  return match ? match[0].length : 0;
+}

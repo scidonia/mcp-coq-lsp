@@ -3,7 +3,7 @@ import {
   isSkipLine, isProofEndLine, isTopLevelLine,
   autoAdvancePosition, insertPosition, findProofLine,
   computeBulletIndent, proofBounds, findAdmitLines,
-  admitPrefix,
+  admitPrefix, bulletInsertPos,
 } from './coq-utils.js';
 import { applyTextEdits } from './document-manager.js';
 
@@ -797,5 +797,30 @@ describe('insert_tactic replace:true undo integrity', () => {
     // where old tactic is deleted but new not yet inserted — empty bullet.
     // After fix, undo(1) restores old tactic cleanly.
     expect(true).toBe(true); // tested live
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// bulletInsertPos — lands AFTER bullet prefix, not at column 0
+// ═══════════════════════════════════════════════════════════════════
+
+describe('bulletInsertPos', () => {
+  it('returns 2 for "- "', () => {
+    expect(bulletInsertPos('- ')).toBe(2);
+  });
+  it('returns 4 for "  + "', () => {
+    expect(bulletInsertPos('  + ')).toBe(4);
+  });
+  it('returns 6 for "    * "', () => {
+    expect(bulletInsertPos('    * ')).toBe(6);
+  });
+  it('returns 0 for empty string', () => {
+    expect(bulletInsertPos('')).toBe(0);
+  });
+  it('returns 0 for bare text without bullet', () => {
+    expect(bulletInsertPos('some text')).toBe(0);
+  });
+  it('returns indent+2 for "  - " (single level)', () => {
+    expect(bulletInsertPos('  - ')).toBe(4);
   });
 });

@@ -16,7 +16,7 @@ import {
 import { RocqLspClient } from './lsp-client.js';
 import { DocumentManager } from './document-manager.js';
 import { detectProjectConfig, mergeProjectArgs, findProjectRoot } from './project-config.js';
-import { isSkipLine, isProofEndLine, isTopLevelLine, autoAdvancePosition, insertPosition, findProofLine, computeBulletIndent, proofBounds, findAdmitLines } from './coq-utils.js';
+import { isSkipLine, isProofEndLine, isTopLevelLine, autoAdvancePosition, insertPosition, findProofLine, computeBulletIndent, proofBounds, findAdmitLines, bulletInsertPos } from './coq-utils.js';
 import type {
   Position,
   Range,
@@ -1368,12 +1368,7 @@ async function main() {
           let fromAdmitReplacement = false;
           const admitPos = lastAdmitReplaced.get(file);
           if (admitPos !== undefined) {
-            // replace_admit set this — insert AFTER the bullet prefix on the reopened line
-            const admitLine = docLines[admitPos] || '';
-            const bulletMatch = admitLine.match(/^\s*[-+*]+\s/);
-            insPos = bulletMatch
-              ? { line: admitPos, character: bulletMatch[0].length }
-              : { line: admitPos, character: 0 };
+            insPos = { line: admitPos, character: bulletInsertPos(docLines[admitPos] || '') };
             fromAdmitReplacement = true;
             lastAdmitReplaced.delete(file);
           } else {
