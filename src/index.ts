@@ -1173,15 +1173,11 @@ async function main() {
           await docManager.updateDocument(file, newText);
           await docManager.saveDocument(file);
 
-          // Force LSP to re-process after bulk edit to prevent stale state
+          // Force LSP to re-process after bulk edit — close + reopen
+          // to drop stale bindings from the old file state.
           try {
-            const updatedDoc = docManager.getDocument(file)!;
-            await retryDocumentNotReady(() =>
-              lspClient.sendRequest<{ spans: Array<{ range: Range }>; completed: { status: string } }>('coq/getDocument', {
-                textDocument: { uri: updatedDoc.uri, version: updatedDoc.version },
-                ast: false,
-              })
-            );
+            await docManager.closeDocument(file);
+            await ensureDocumentOpened(file);
           } catch { /* best-effort re-sync */ }
 
           const updatedDoc = docManager.getDocument(file)!;
