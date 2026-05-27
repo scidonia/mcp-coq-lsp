@@ -1209,8 +1209,17 @@ async function main() {
           try {
             await docManager.closeDocument(file);
             await ensureDocumentOpened(file);
-            // Wait for coq-lsp to finish re-checking the reopened document
-            await sleep(300);
+            // Poll with petanque (memo=false) at last line to force full document check.
+            // proof/goals at (0,0) returns instantly — doesn't force checking downstream.
+            const freshDoc = docManager.getDocument(file)!;
+            const lastLine = Math.max(0, freshDoc.text.split('\n').length - 1);
+            await retryDocumentNotReady(() =>
+              lspClient.sendRequest<RunResult<number>>('petanque/get_state_at_pos', {
+                uri: freshDoc.uri,
+                position: { line: lastLine, character: 0 },
+                opts: { memo: false, hash: false },
+              })
+            );
           } catch (e) {
             console.error('[edit_file] re-sync failed:', e);
           }
@@ -1395,13 +1404,13 @@ async function main() {
               lspClient.sendRequest<RunResult<number>>('petanque/get_state_at_pos', {
                 uri: doc.uri,
                 position: insPos,
-                opts: { memo: true, hash: true },
+                opts: { memo: false },
               })
             );
             const runResult = await lspClient.sendRequest<RunResult<number>>('petanque/run', {
               st: stateResult.st,
               tac: tactic,
-              opts: { memo: true, hash: true },
+              opts: { memo: false },
             });
             // Query resulting goals to preview what the tactic will do
             try {
