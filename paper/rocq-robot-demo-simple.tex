@@ -1,0 +1,26 @@
+\documentclass[11pt]{article}
+\usepackage{listings}
+\usepackage{hyperref}
+\usepackage{xspace}
+
+\title{rocq-robot: Neurosymbolic Theorem Proving via LLM-LSP Integration}
+\author{Gavin Mendel-Gleason\\Scidonia\\Dublin, Ireland\\gavin@scidonia.com}
+\date{}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+We present \textbf{rocq-robot}, a Model Context Protocol (MCP) server that enables seamless integration between Large Language Models (LLMs) and the Rocq proof assistant (formerly Coq) through the Language Server Protocol (LSP). This tool demonstrates neurosymbolic programming: the real-time collaboration between neural networks (LLMs) and symbolic reasoning systems (proof assistants). By exposing proof state, tactic execution, and speculative reasoning capabilities through 20+ MCP tools, rocq-robot enables LLMs to autonomously construct formal proofs with guaranteed correctness. We demonstrate the tool's capability by presenting a complete LLM-driven proof of a type preservation theorem for PCF with references, comprising 21 inductive cases and 7 supporting lemmas—all completed without human intervention using only tool-based interactions.
+\end{abstract}
+
+\section{Introduction}
+
+The integration of Large Language Models (LLMs) with formal verification tools represents a paradigm shift in automated theorem proving. While LLMs excel at pattern recognition and heuristic search, they lack the rigorous logical guarantees provided by proof assistants. Conversely, proof assistants ensure absolute correctness but require expert knowledge and tedious manual effort.
+
+\textbf{rocq-robot} bridges this gap by enabling neurosymbolic programming: LLMs propose proof tactics based on learned patterns, while Rocq verifies each step's correctness. This architecture achieves both the creativity of neural systems and the soundness of symbolic reasoning.
+
+For full paper, see: \url{https://github.com/scidonia/rocq-robot/paper}
+
+\end{document}

@@ -102,7 +102,7 @@ Definition extends (S' S : store_ty) : Prop := exists S2, S' = S ++ S2.
 Lemma extends_refl : forall S, extends S S.
 Proof.
 intros S. unfold extends. exists []. symmetry. apply app_nil_r.
-Qed.
+Admitted.
 
 
 
@@ -141,6 +141,18 @@ Proof.
   - apply T_Loc. apply nth_error_app_l with (l1 := S). exact H.
 Qed.
 
+
+Lemma test_admits : True /\ True /\ True /\ True.
+Proof.
+split.
+- admit.
+- split.
+  + admit.
+  + admit.
+Admitted.
+
+
+
 Theorem preservation : forall t mu t' mu' T S,
   has_type [] S t T -> step t mu t' mu' ->
   heap_ok mu S ->
@@ -163,4 +175,5 @@ apply T_If with (T := T). exact Hty'. apply has_type_weaken with (S1 := S). exac
 destruct (IHHstep (TyArrow T1 T) S H3 Hok) as [S' [Hext [Hok' Hty']]]. exists S'. split. exact Hext. split. exact Hok'. apply T_App with (T1 := T1). exact Hty'. apply has_type_weaken with (S1 := S). exact H5. exact Hext.
 - intros T S Hty Hok. inversion Hty; subst. destruct (IHHstep T1 S H6 Hok) as [S' [Hext [Hok' Hty']]]. exists S'. split. exact Hext. split. exact Hok'. apply T_App with (T1 := T1). apply has_type_weaken with (S1 := S). exact H4. exact Hext. exact Hty'.
 - intros T S Hty Hok. inversion Hty; subst. destruct (IHHstep T S H Hok) as [S' [Hext [Hok' Hty']]]. exists S'. split. exact Hext. split. exact Hok'. apply T_Ref. exact Hty'.
+intros T0 S Hty Hok.
 Admitted.

@@ -1,0 +1,73 @@
+\documentclass[sigconf,screen]{acmart}
+
+\begin{document}
+
+\title{🤖 rocq-robot: Neurosymbolic Theorem Proving via LLM-LSP Integration}
+
+\author{Gavin Mendel-Gleason}
+\affiliation{%
+  \institution{Scidonia}
+  \city{Dublin}
+  \country{Ireland}
+}
+\email{gavin@scidonia.com}
+
+\maketitle
+
+\section*{Demo Abstract}
+
+We demonstrate \textbf{rocq-robot}, a Model Context Protocol (MCP) server enabling seamless integration between Large Language Models (LLMs) and the Rocq proof assistant (formerly Coq) through the Language Server Protocol (LSP). This tool embodies \emph{neurosymbolic programming}: real-time collaboration between neural networks (LLMs providing heuristic guidance) and symbolic reasoning systems (proof assistants ensuring correctness).
+
+\paragraph{What We Will Demonstrate}
+
+The demo will showcase:
+
+\begin{enumerate}
+\item \textbf{Interactive proof construction}: Live LLM-driven proof development with rocq-robot tools, showing how an AI agent navigates proof state, queries available lemmas, and applies tactics with immediate verification feedback.
+
+\item \textbf{Speculative execution}: Demonstrating how LLMs can "try before committing"—testing tactics speculatively without file modifications, enabling efficient exploration of proof strategies.
+
+\item \textbf{Autonomous theorem proving}: Presenting our completed type preservation proof for PCF with references (21 inductive cases, 7 helper lemmas)—entirely constructed by an LLM using only tool-based interactions, no human intervention.
+
+\item \textbf{Error recovery}: Showing how failed tactics provide actionable feedback, allowing LLMs to adjust strategies and retry—demonstrating the robustness of the neurosymbolic approach.
+
+\item \textbf{Project-aware development}: Illustrating automatic workspace switching when working across multiple Rocq projects with different dependencies.
+\end{enumerate}
+
+\paragraph{Technical Innovation}
+
+rocq-robot provides 20+ MCP tools organized into:
+\begin{itemize}
+\item \textbf{Proof interaction}: Focus on proofs, query goals, insert tactics with automatic bullet management, undo operations
+\item \textbf{Knowledge search}: Find lemmas, check types, locate definitions, speculatively import libraries
+\item \textbf{State management}: Low-level Pétanque API for fine-grained proof state control
+\end{itemize}
+
+Unlike existing LLM+theorem prover integrations (e.g., LeanDojo, Baldur), rocq-robot focuses on the \emph{interaction protocol} rather than model training, making it usable with any LLM through standardized tool interfaces.
+
+\paragraph{Practical Value}
+
+rocq-robot demonstrates that formal verification—traditionally requiring expert knowledge—can be made accessible through AI assistance while maintaining absolute correctness guarantees. Every proof step is verified by Rocq's kernel; the LLM provides creative guidance, the proof assistant ensures soundness.
+
+\paragraph{Availability}
+
+The tool is open-source (MIT license), production-ready, and actively used:
+\begin{itemize}
+\item GitHub: \url{https://github.com/scidonia/rocq-robot}
+\item Documentation: Comprehensive guides, API reference, working examples
+\item Requirements: Node.js 20+, Rocq/Coq 8.19+, rocq-lsp 0.2.0+
+\end{itemize}
+
+\paragraph{Demo Format}
+
+We will provide:
+\begin{itemize}
+\item Live coding session showing LLM constructing proofs in real-time
+\item Interactive Q\&A where attendees can suggest theorems for the LLM to prove
+\item Technical deep-dive into the LSP↔MCP translation architecture
+\item Discussion of future directions: multi-agent orchestration, cross-assistant support, proof repair
+\end{itemize}
+
+Attendees will leave understanding how neurosymbolic programming enables autonomous formal verification with guaranteed correctness.
+
+\end{document}

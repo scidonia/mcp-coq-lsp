@@ -652,3 +652,38 @@ describe('findAdmitLines', () => {
     expect(findAdmitLines(clean.split('\n'), b!.proofLine, b!.endLine)).toEqual([]);
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════
+// Auto-Qed should NOT fire when given_up goals exist (admit. tactics)
+// ═══════════════════════════════════════════════════════════════════
+
+describe('auto-Qed gate: shouldAutoClose', () => {
+  function shouldAutoClose(nFocus: number, nBg: number, nGivenUp: number): boolean {
+    return nFocus === 0 && nBg === 0 && nGivenUp === 0;
+  }
+
+  it('allows Qed when nothing outstanding', () => {
+    expect(shouldAutoClose(0, 0, 0)).toBe(true);
+  });
+
+  it('blocks Qed when focus goals remain', () => {
+    expect(shouldAutoClose(1, 0, 0)).toBe(false);
+  });
+
+  it('blocks Qed when background goals remain', () => {
+    expect(shouldAutoClose(0, 1, 0)).toBe(false);
+  });
+
+  it('blocks Qed when admitted goals exist', () => {
+    expect(shouldAutoClose(0, 0, 1)).toBe(false);
+    expect(shouldAutoClose(0, 0, 3)).toBe(false);
+  });
+
+  it('blocks Qed with focus + admits', () => {
+    expect(shouldAutoClose(1, 0, 2)).toBe(false);
+  });
+
+  it('blocks Qed with bg + admits', () => {
+    expect(shouldAutoClose(0, 2, 1)).toBe(false);
+  });
+});

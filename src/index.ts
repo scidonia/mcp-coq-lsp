@@ -907,7 +907,11 @@ async function main() {
       const total = goals.length + bgGoals;
 
       if (total === 0) {
-        return 'Proof complete. You may close with Qed. or leave as Admitted.';
+        const nGivenUp = gc?.given_up?.length || 0;
+        if (nGivenUp > 0) {
+          return `${nGivenUp} goal(s) admitted — use list_admitted to find them.`;
+        }
+        return 'Proof complete. Qed auto-applied.';
       }
       if (goals.length === 0 && bgGoals > 0) return `Bullet closed. ${bgGoals} goal(s) in background. Insert next bullet.`;
       if (goals.length === 1) {
@@ -1570,7 +1574,8 @@ async function main() {
           const nBg = (gcAfter?.stack || []).reduce(
             (s: number, [b, a]: any[]) => s + (b?.length || 0) + (a?.length || 0), 0
           );
-          
+          const nGivenUp = gcAfter?.given_up?.length ?? 0;
+
           const hint = gcAfter ? nextHint(gcAfter) : '';
 
           const stateMsg = goals?.error
@@ -1578,14 +1583,18 @@ async function main() {
             : oneLineSplit ? 'inserted'
             : gcAfter === undefined || gcAfter === null
             ? 'goals query failed'
-            : nFocus === 0 && nBg === 0 ? 'done — Qed applied'
+            : nFocus === 0 && nBg === 0 && nGivenUp === 0 ? 'done — Qed applied'
+            : nFocus === 0 && nGivenUp > 0 ? `bullet closed (${nGivenUp} admitted), ${nBg} in background`
             : nFocus === 0 ? `bullet closed, ${nBg} in background`
             : nBg > 0 ? `${nFocus} at focus, ${nBg} in background (bullet open)`
             : `${nFocus} goal(s)`;
 
-          // Auto-close: when all goals are done, replace the Admitted. stub with Qed.
+          // Auto-close: when all goals are done AND nothing is admitted, replace Admitted. with Qed.
+          // Never auto-Qed if there are given-up goals (admit. tactics inside the proof).
           const hasErrors = (goals?.messages || []).some((m: any) => m.level === 1);
-          if (nFocus === 0 && nBg === 0 && gcAfter !== undefined && gcAfter !== null && !hasErrors) {
+          const canAutoClose = nFocus === 0 && nBg === 0 && nGivenUp === 0 &&
+            gcAfter !== undefined && gcAfter !== null && !hasErrors;
+          if (canAutoClose) {
             const currentDoc = docManager.getDocument(file);
             if (currentDoc) {
               const lines = currentDoc.text.split('\n');
