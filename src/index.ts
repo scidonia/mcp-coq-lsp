@@ -16,7 +16,7 @@ import {
 import { RocqLspClient } from './lsp-client.js';
 import { DocumentManager } from './document-manager.js';
 import { detectProjectConfig, mergeProjectArgs, findProjectRoot } from './project-config.js';
-import { isSkipLine, isProofEndLine, isTopLevelLine, autoAdvancePosition, insertPosition, findProofLine, computeBulletIndent, proofBounds, findAdmitLines, bulletInsertPos } from './coq-utils.js';
+import { isSkipLine, isProofEndLine, isTopLevelLine, autoAdvancePosition, insertPosition, findProofLine, computeBulletIndent, proofBounds, findAdmitLines, bulletInsertPos, admitPrefix } from './coq-utils.js';
 import type {
   Position,
   Range,
@@ -491,23 +491,17 @@ async function main() {
           name: 'insert_tactic',
           description:
             'Insert a tactic into a proof and return updated goals. ' +
-            'Auto-prepends bullet prefix (-, +, *) when proof state requires it. ' +
-            'Pass replace: true to replace the last inserted tactic (retry a failed tactic). ' +
-            'Prefer explicit "as" clauses with induction/destruct for robust proofs.',
+            'Auto-prepends bullet prefix. Pass replace:true to retry. ' +
+            'Pass admit_hash to replace a specific admitted bullet (from list_admitted).',
           inputSchema: {
             type: 'object',
             properties: {
               file: { type: 'string' },
               name: { type: 'string', description: 'Proof name (e.g. "preservation")' },
               tactic: { type: 'string' },
-              follow_with_goals: {
-                type: 'boolean',
-                description: 'Query goals after inserting',
-              },
-              replace: {
-                type: 'boolean',
-                description: 'Replace the last inserted tactic (retry a failed tactic)',
-              },
+              follow_with_goals: { type: 'boolean', description: 'Query goals after inserting' },
+              replace: { type: 'boolean', description: 'Replace the last inserted tactic' },
+              admit_hash: { type: 'string', description: 'Hash from list_admitted — replace this admit with tactic' },
             },
             required: ['file', 'name', 'tactic'],
           },
@@ -1291,18 +1285,56 @@ async function main() {
 
         case 'insert_tactic': {
           const rawPos = (args as any).position as Position | undefined;
-          const { file, name, tactic: rawTactic, follow_with_goals, replace } = args as {
+          const { file, name, tactic: rawTactic, follow_with_goals, replace, admit_hash } = args as {
             file: string;
             name: string;
             tactic: string;
             follow_with_goals?: boolean;
             replace?: boolean;
+            admit_hash?: string;
           };
 
           currentProof.set(file, name);
 
           await ensureDocumentOpened(file);
           let doc = docManager.getDocument(file)!;
+
+          // If admit_hash is provided, find and remove the matching admit first
+          if (admit_hash) {
+            const docLines = doc.text.split('\n');
+            const bounds = proofBounds(docLines, name);
+            if (!bounds) throw new Error(`Proof not found: "${name}"`);
+            const admitLines = findAdmitLines(docLines, bounds.proofLine, bounds.endLine);
+            let targetLine = -1;
+            for (const line of admitLines) {
+              try {
+                const stateR = await retryDocumentNotReady(() =>
+                  lspClient.sendRequest<RunResult<number>>('petanque/get_state_at_pos', {
+                    uri: doc.uri, position: { line, character: 0 }, opts: { memo: false },
+                  })
+                );
+                const goalsR = await lspClient.sendRequest<GoalConfig<string>>('petanque/goals', {
+                  st: stateR.st, opts: { compact: true },
+                });
+                const goalText = (goalsR.goals || []).map(g => (g.ty || '').replace(/\s+/g, ' ')).join(' | ');
+                const h = createHash('md5').update(goalText).digest('hex').slice(0, 8);
+                if (h === admit_hash) { targetLine = line; break; }
+              } catch {}
+            }
+            if (targetLine < 0) throw new Error(`No admit found with hash "${admit_hash}"`);
+            // Remove admit line, preserve bullet marker, set position for insert_tactic
+            const admitLine = docLines[targetLine];
+            const prefix = admitPrefix(admitLine);
+            const newText = docManager.applyEdits(doc.text, [{
+              range: { start: { line: targetLine, character: 0 }, end: { line: targetLine + 1, character: 0 } },
+              newText: prefix ? `${prefix.trim()}\n` : '',
+            }]);
+            pushFileHistory(file, doc.text, null);
+            await docManager.updateDocument(file, newText);
+            await docManager.saveDocument(file);
+            lastAdmitReplaced.set(file, targetLine);
+            doc = docManager.getDocument(file)!;
+          }
 
           // If replacing, delete the last inserted tactic text from the file first
           let historyAlreadyPushed = false;
@@ -1711,6 +1743,21 @@ async function main() {
             : nFocus === 0 ? `bullet closed, ${nBg} in background`
             : nBg > 0 ? `${nFocus} at focus, ${nBg} in background (bullet open)`
             : `${nFocus} goal(s)`;
+
+          // Auto-re-seal: if admit_hash was used and the bullet isn't closed,
+          // re-add admit. so the proof stays valid.
+          if (admit_hash && nFocus > 0 && gcAfter !== undefined && !hasErrors) {
+            const sealTactic = 'admit.\n';
+            const currentDoc = docManager.getDocument(file);
+            if (currentDoc) {
+              const sealText = docManager.applyEdits(currentDoc.text, [{
+                range: { start: insPos, end: insPos },
+                newText: sealTactic,
+              }]);
+              await docManager.updateDocument(file, sealText);
+              await docManager.saveDocument(file);
+            }
+          }
 
           // Auto-close: when all goals are done AND nothing is admitted, replace Admitted. with Qed.
           // Never auto-Qed if there are given-up goals (admit. tactics inside the proof).
