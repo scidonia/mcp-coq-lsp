@@ -128,3 +128,39 @@ export function computeBulletIndent(
   if (lastTacticIndent >= 0) return ' '.repeat(Math.max(0, lastTacticIndent));
   return '';
 }
+
+/**
+ * Find the proof body bounds for a named proof.
+ * Returns { proofLine, endLine } or null if not found.
+ */
+export function proofBounds(lines: string[], proofName: string): { proofLine: number; endLine: number } | null {
+  const proofLine = findProofLine(lines, proofName);
+  if (proofLine < 0) return null;
+
+  let endLine = -1;
+  for (let i = proofLine + 1; i < lines.length; i++) {
+    const l = lines[i].trim();
+    if (l === 'Admitted.' || l === 'Qed.' || l === 'Defined.') {
+      endLine = i;
+      break;
+    }
+    if (isTopLevelLine(lines[i] || '')) break;
+  }
+  if (endLine < 0) return null;
+  return { proofLine, endLine };
+}
+
+/**
+ * Find all admit. (lowercase, tactic-level) lines within a proof body.
+ * Returns the 0-indexed line numbers of each admit.
+ */
+export function findAdmitLines(lines: string[], proofLine: number, endLine: number): number[] {
+  const admitted: number[] = [];
+  for (let i = proofLine + 1; i < endLine; i++) {
+    const t = lines[i].trim();
+    if (t === 'admit.' || t.endsWith(' admit.')) {
+      admitted.push(i);
+    }
+  }
+  return admitted;
+}

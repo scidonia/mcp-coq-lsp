@@ -2,19 +2,14 @@
 
 ## In Progress
 
-### Show full hypothesis list in spec preview (single-goal tactics)
-- **Problem:** After `intros ... inversion ...`, you don't know what names Coq chose (`H4`? `H6`?). You guess wrong, commit, undo, redo.
-- **Fix:** When spec check finds 1 goal, show full hypotheses with types. Commit `42c6980`.
+
+## Backlog — High Priority
 
 ## Backlog — High Priority
 
 ### No way to return to admitted/outstanding bullets
-- **Problem:** When you `admit` a case mid-induction (e.g., S_AppAbs, S_Fix), those subgoals become "given-up." The proof continues with remaining bullets. After finishing all solvable cases, there's no tool to:
-  - List which bullets were admitted/given-up
-  - Jump back to a specific admitted bullet
-  - Replace `admit.` with a real proof
-  The only option is to scroll through the file and manually find `admit` lines.
-- **Proposed:** A `list_admitted` tool and a `jump_to_bullet` command.
+- **Problem:** When you `admit` a case mid-induction, those subgoals become "given-up." No way to navigate back and replace them.
+- **Fix:** `list_admitted` scans proof for `admit.` lines, queries goal state at each, returns `{hash, line, goal}`. `replace_admit hash=...` finds the matching admit by goal hash, removes the line, reopening the bullet for `insert_tactic`. Commit `f8120ad`.
 
 ### Multi-tactic one-liner silently drops tail
 - **Problem:** `intros. inversion; subst. destruct... exists... split... apply...` on one line. If any `.`-separated tactic fails mid-line, Coq stops processing, everything after is dead code. No error reported, file corrupted.
@@ -52,4 +47,5 @@
 - [x] Auto-`.` — appends period if missing from tactic
 - [x] No goal/type truncation — full visibility for AI reasoning
 - [x] Stale LSP after edit — close+reopen+poll with petanque memo=false
-- [x] Full hypothesis list in spec preview (single-goal cases)
+- [x] Full hypothesis list in spec preview (single-goal cases) — commit `42c6980`
+- [x] `list_admitted` + `replace_admit` for bullet navigation — commit `f8120ad`

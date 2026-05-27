@@ -16,7 +16,7 @@ import {
 import { RocqLspClient } from './lsp-client.js';
 import { DocumentManager } from './document-manager.js';
 import { detectProjectConfig, mergeProjectArgs, findProjectRoot } from './project-config.js';
-import { isSkipLine, isProofEndLine, isTopLevelLine, autoAdvancePosition, insertPosition, findProofLine, computeBulletIndent } from './coq-utils.js';
+import { isSkipLine, isProofEndLine, isTopLevelLine, autoAdvancePosition, insertPosition, findProofLine, computeBulletIndent, proofBounds, findAdmitLines } from './coq-utils.js';
 import type {
   Position,
   Range,
@@ -2510,38 +2510,29 @@ async function main() {
           const { file, name } = args as { file: string; name: string };
           const doc = await ensureDocumentOpened(file);
           const docLines = doc.text.split('\n');
-          const proofLine = findProofLine(docLines, name);
-          if (proofLine < 0) throw new Error(`Proof not found: "${name}"`);
-
-          // Find the Admitted./Qed. closing
-          let endLine = -1;
-          for (let i = proofLine + 1; i < docLines.length; i++) {
-            const l = docLines[i].trim();
-            if (l === 'Admitted.' || l === 'Qed.' || l === 'Defined.') { endLine = i; break; }
-          }
-          if (endLine < 0) throw new Error('No Admitted./Qed. found');
+          const bounds = proofBounds(docLines, name);
+          if (!bounds) throw new Error(`Proof not found: "${name}"`);
+          const admitLines = findAdmitLines(docLines, bounds.proofLine, bounds.endLine);
 
           const admitted: Array<{ hash: string; line: number; goal: string }> = [];
-          for (let i = proofLine + 1; i < endLine; i++) {
-            if (docLines[i].trim() === 'admit.') {
-              try {
-                const stateR = await retryDocumentNotReady(() =>
-                  lspClient.sendRequest<RunResult<number>>('petanque/get_state_at_pos', {
-                    uri: doc.uri,
-                    position: { line: i, character: 0 },
-                    opts: { memo: false },
-                  })
-                );
-                const goalsR = await lspClient.sendRequest<GoalConfig<string>>('petanque/goals', {
-                  st: stateR.st,
-                  opts: { compact: true },
-                });
-                const goalText = (goalsR.goals || []).map(g => (g.ty || '').replace(/\s+/g, ' ')).join(' | ');
-                const hash = createHash('md5').update(goalText).digest('hex').slice(0, 8);
-                admitted.push({ hash, line: i + 1, goal: goalText || '(no goals)' });
-              } catch {
-                admitted.push({ hash: 'error', line: i + 1, goal: '(could not query)' });
-              }
+          for (const line of admitLines) {
+            try {
+              const stateR = await retryDocumentNotReady(() =>
+                lspClient.sendRequest<RunResult<number>>('petanque/get_state_at_pos', {
+                  uri: doc.uri,
+                  position: { line, character: 0 },
+                  opts: { memo: false },
+                })
+              );
+              const goalsR = await lspClient.sendRequest<GoalConfig<string>>('petanque/goals', {
+                st: stateR.st,
+                opts: { compact: true },
+              });
+              const goalText = (goalsR.goals || []).map(g => (g.ty || '').replace(/\s+/g, ' ')).join(' | ');
+              const hash = createHash('md5').update(goalText).digest('hex').slice(0, 8);
+              admitted.push({ hash, line: line + 1, goal: goalText || '(no goals)' });
+            } catch {
+              admitted.push({ hash: 'error', line: line + 1, goal: '(could not query)' });
             }
           }
 
@@ -2556,37 +2547,29 @@ async function main() {
           const { file, name, hash } = args as { file: string; name: string; hash: string };
           const doc = await ensureDocumentOpened(file);
           const docLines = doc.text.split('\n');
-          const proofLine = findProofLine(docLines, name);
-          if (proofLine < 0) throw new Error(`Proof not found: "${name}"`);
-
-          let endLine = -1;
-          for (let i = proofLine + 1; i < docLines.length; i++) {
-            const l = docLines[i].trim();
-            if (l === 'Admitted.' || l === 'Qed.' || l === 'Defined.') { endLine = i; break; }
-          }
-          if (endLine < 0) throw new Error('No Admitted./Qed. found');
+          const bounds = proofBounds(docLines, name);
+          if (!bounds) throw new Error(`Proof not found: "${name}"`);
+          const admitLines = findAdmitLines(docLines, bounds.proofLine, bounds.endLine);
 
           // Find matching admit by hash
           let targetLine = -1;
-          for (let i = proofLine + 1; i < endLine; i++) {
-            if (docLines[i].trim() === 'admit.') {
-              try {
-                const stateR = await retryDocumentNotReady(() =>
-                  lspClient.sendRequest<RunResult<number>>('petanque/get_state_at_pos', {
-                    uri: doc.uri,
-                    position: { line: i, character: 0 },
-                    opts: { memo: false },
-                  })
-                );
-                const goalsR = await lspClient.sendRequest<GoalConfig<string>>('petanque/goals', {
-                  st: stateR.st,
-                  opts: { compact: true },
-                });
-                const goalText = (goalsR.goals || []).map(g => (g.ty || '').replace(/\s+/g, ' ')).join(' | ');
-                const h = createHash('md5').update(goalText).digest('hex').slice(0, 8);
-                if (h === hash) { targetLine = i; break; }
-              } catch {}
-            }
+          for (const line of admitLines) {
+            try {
+              const stateR = await retryDocumentNotReady(() =>
+                lspClient.sendRequest<RunResult<number>>('petanque/get_state_at_pos', {
+                  uri: doc.uri,
+                  position: { line, character: 0 },
+                  opts: { memo: false },
+                })
+              );
+              const goalsR = await lspClient.sendRequest<GoalConfig<string>>('petanque/goals', {
+                st: stateR.st,
+                opts: { compact: true },
+              });
+              const goalText = (goalsR.goals || []).map(g => (g.ty || '').replace(/\s+/g, ' ')).join(' | ');
+              const h = createHash('md5').update(goalText).digest('hex').slice(0, 8);
+              if (h === hash) { targetLine = line; break; }
+            } catch {}
           }
 
           if (targetLine < 0) throw new Error(`No admit found with hash "${hash}"`);

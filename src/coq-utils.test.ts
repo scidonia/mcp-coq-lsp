@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   isSkipLine, isProofEndLine, isTopLevelLine,
   autoAdvancePosition, insertPosition, findProofLine,
-  computeBulletIndent,
+  computeBulletIndent, proofBounds, findAdmitLines,
 } from './coq-utils.js';
 import { applyTextEdits } from './document-manager.js';
 
@@ -585,5 +585,70 @@ describe('stale LSP: edit_file removal clears LSP bindings', () => {
     }]);
     expect(after).not.toContain('Lemma helper');
     expect(after).toContain('Lemma main');
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// ISSUE: list_admitted + replace_admit — navigate & reopen admitted bullets
+// ═══════════════════════════════════════════════════════════════════
+
+// ═══════════════════════════════════════════════════════════════════
+// list_admitted + replace_admit — use real production functions
+// ═══════════════════════════════════════════════════════════════════
+
+describe('proofBounds', () => {
+  it('finds proof body bounds', () => {
+    const text = 'Theorem foo : nat.\nProof.\n  reflexivity.\nQed.';
+    const b = proofBounds(text.split('\n'), 'foo');
+    expect(b).not.toBeNull();
+    expect(b!.endLine).toBeGreaterThan(b!.proofLine);
+  });
+
+  it('returns null for missing proof', () => {
+    expect(proofBounds('Lemma x : nat.\nProof.\nQed.'.split('\n'), 'nope')).toBeNull();
+  });
+
+  it('finds Admitted. closing', () => {
+    const text = 'Theorem bar : nat.\nProof.\n  admit.\nAdmitted.';
+    const b = proofBounds(text.split('\n'), 'bar');
+    expect(b).not.toBeNull();
+    expect(b!.endLine).toBe(3);
+  });
+});
+
+describe('findAdmitLines', () => {
+  const body = [
+    'Theorem foo : nat.',
+    'Proof.',
+    '  induction n.',
+    '  - reflexivity.',
+    '  - admit.',
+    '  - reflexivity.',
+    '  - admit.',
+    'Admitted.',
+  ].join('\n');
+  const bounds = proofBounds(body.split('\n'), 'foo')!;
+
+  it('finds both admit. tactic lines', () => {
+    const admits = findAdmitLines(body.split('\n'), bounds.proofLine, bounds.endLine);
+    expect(admits).toHaveLength(2);
+    const lines = body.split('\n');
+    expect(lines[admits[0]].trim()).toMatch(/admit\./);
+    expect(lines[admits[1]].trim()).toMatch(/admit\./);
+  });
+
+  it('excludes Admitted. (closing)', () => {
+    const admits = findAdmitLines(body.split('\n'), bounds.proofLine, bounds.endLine);
+    const lines = body.split('\n');
+    for (const a of admits) {
+      expect(lines[a].trim()).not.toBe('Admitted.');
+    }
+    expect(admits).toHaveLength(2);
+  });
+
+  it('returns empty for clean proof', () => {
+    const clean = 'Theorem bar : nat.\nProof.\n  reflexivity.\nQed.';
+    const b = proofBounds(clean.split('\n'), 'bar');
+    expect(findAdmitLines(clean.split('\n'), b!.proofLine, b!.endLine)).toEqual([]);
   });
 });
