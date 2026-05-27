@@ -1394,12 +1394,7 @@ async function main() {
           if (tactic.length > 0 && !tactic.endsWith('.')) {
             tactic = tactic + '.';
           }
-          // Warn on long multi-tactic one-liners: if any .-separated sub-tactic
-          // fails, Coq silently drops everything after it.
           const dotCount = (tactic.match(/\./g) || []).length;
-          if (dotCount > 3) {
-            console.warn('[insert_tactic] multi-tactic one-liner with', dotCount, 'sub-tactics — consider splitting into multiple insert_tactic calls');
-          }
           if (!fromAdmitReplacement) {
           try {
             // Query at end of previous non-blank line to get correct stack depth
@@ -1628,6 +1623,19 @@ async function main() {
               { applied: false, error: 'goals query failed after insertion', rolled_back: true }
             );
           }
+
+          // If the tactic produced Coq errors (e.g. mid-line reference error
+          // in a multi-tactic one-liner), roll back and report the error.
+          const hasErrors = (goals?.messages || []).some((m: any) => m.level === 1);
+          if (hasErrors) {
+            const errMsg = (goals?.messages || []).filter((m: any) => m.level === 1).map((m: any) => m.text || m.message).join('; ');
+            await docManager.updateDocument(file, preEditText);
+            await docManager.saveDocument(file);
+            return reply(
+              `${fileLine(file, position.line)} — tactic error — rolled back\n  Coq says: ${errMsg}`,
+              { applied: false, error: errMsg, rolled_back: true }
+            );
+          }
           const nFocus = gcAfter?.goals?.length ?? 0;
           const nBg = (gcAfter?.stack || []).reduce(
             (s: number, [b, a]: any[]) => s + (b?.length || 0) + (a?.length || 0), 0
@@ -1649,7 +1657,6 @@ async function main() {
 
           // Auto-close: when all goals are done AND nothing is admitted, replace Admitted. with Qed.
           // Never auto-Qed if there are given-up goals (admit. tactics inside the proof).
-          const hasErrors = (goals?.messages || []).some((m: any) => m.level === 1);
           const canAutoClose = nFocus === 0 && nBg === 0 && nGivenUp === 0 &&
             gcAfter !== undefined && gcAfter !== null && !hasErrors;
           if (canAutoClose) {
