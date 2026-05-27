@@ -1464,6 +1464,10 @@ async function main() {
                 msg.includes('proof-editing') ||
                 (tactic === 'Qed.' || tactic === 'Defined.' || tactic === 'Admitted.')) {
               // Allow Qed, Admitted, and proof-mode guard errors to pass through
+            } else if (msg.includes('No more subgoals') || msg.includes('No focused proof') ||
+                       msg.includes('nothing to admit')) {
+              // admit. with no open goal — reject
+              speculativeError = msg;
             } else {
               speculativeError = msg;
             }
