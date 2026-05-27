@@ -1394,6 +1394,12 @@ async function main() {
           if (tactic.length > 0 && !tactic.endsWith('.')) {
             tactic = tactic + '.';
           }
+          // Warn on long multi-tactic one-liners: if any .-separated sub-tactic
+          // fails, Coq silently drops everything after it.
+          const dotCount = (tactic.match(/\./g) || []).length;
+          if (dotCount > 3) {
+            console.warn('[insert_tactic] multi-tactic one-liner with', dotCount, 'sub-tactics — consider splitting into multiple insert_tactic calls');
+          }
           if (!fromAdmitReplacement) {
           try {
             // Query at end of previous non-blank line to get correct stack depth
