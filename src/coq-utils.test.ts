@@ -887,6 +887,27 @@ describe('replaceAdmitLine', () => {
     expect(result).toContain('* exact I.');
     expect(result).not.toContain('* admit.');
   });
+
+  it('closing tactic (exact I.) replaces - admit. with - exact I. — no extra admit', () => {
+    const simple = 'Lemma x : True.\nProof.\n- admit.\nAdmitted.';
+    const lines = simple.split('\n');
+    const admitLine = lines.findIndex(l => l.includes('admit.'));
+    const result = replaceAdmitLine(simple, admitLine, 'exact I.');
+    expect(result).toContain('- exact I.');
+    // Only one admit. appears (closing Admitted. — not a tactic admit)
+    const admitCount = result.split('\n').filter(l => l.trim() === 'admit.').length;
+    expect(admitCount).toBe(0);
+  });
+
+  it('non-closing tactic (split.) replaces + admit. with + split. — no seal in function', () => {
+    const simple = 'Lemma x : True /\\ True.\nProof.\n  + admit.\nAdmitted.';
+    const lines = simple.split('\n');
+    const admitLine = lines.findIndex(l => l.includes('admit.'));
+    const result = replaceAdmitLine(simple, admitLine, 'split.');
+    expect(result).toContain('+ split.');
+    // Handler would add seal after LSP check; function just replaces
+    expect(result).not.toContain('admit.'); // only Admitted. at closing
+  });
 });
 
 // ═══════════════════════════════════════════════════════════════════
