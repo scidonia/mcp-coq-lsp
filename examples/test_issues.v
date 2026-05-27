@@ -180,4 +180,11 @@ destruct (IHHstep (TyArrow T1 T) S H3 Hok) as [S' [Hext [Hok' Hty']]]. exists S'
 - intros T S Hty Hok. inversion Hty; subst. destruct (IHHstep T1 S H6 Hok) as [S' [Hext [Hok' Hty']]]. exists S'. split. exact Hext. split. exact Hok'. apply T_App with (T1 := T1). apply has_type_weaken with (S1 := S). exact H4. exact Hext. exact Hty'.
 - intros T S Hty Hok. inversion Hty; subst. destruct (IHHstep T S H Hok) as [S' [Hext [Hok' Hty']]]. exists S'. split. exact Hext. split. exact Hok'. apply T_Ref. exact Hty'.
 intros T0 S Hty Hok.
+admit.
+- admit.
+- admit.
+- admit.
+- admit.
+- admit.
+- admit.
 Admitted.

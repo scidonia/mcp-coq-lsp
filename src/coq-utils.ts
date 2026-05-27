@@ -164,3 +164,14 @@ export function findAdmitLines(lines: string[], proofLine: number, endLine: numb
   }
   return admitted;
 }
+
+/**
+ * Extract the bullet/tactic prefix from an admit line.
+ * For "- admit." returns "- ". For "  + admit." returns "  + ".
+ * For bare "admit." returns "".
+ */
+export function admitPrefix(line: string): string {
+  const idx = line.indexOf('admit.');
+  if (idx < 0) return '';
+  return line.substring(0, idx);
+}

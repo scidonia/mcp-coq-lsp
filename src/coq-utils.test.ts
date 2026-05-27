@@ -3,6 +3,7 @@ import {
   isSkipLine, isProofEndLine, isTopLevelLine,
   autoAdvancePosition, insertPosition, findProofLine,
   computeBulletIndent, proofBounds, findAdmitLines,
+  admitPrefix,
 } from './coq-utils.js';
 import { applyTextEdits } from './document-manager.js';
 
@@ -685,5 +686,69 @@ describe('auto-Qed gate: shouldAutoClose', () => {
 
   it('blocks Qed with bg + admits', () => {
     expect(shouldAutoClose(0, 2, 1)).toBe(false);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// admitPrefix — preserves bullet marker when replacing admit
+// ═══════════════════════════════════════════════════════════════════
+
+describe('admitPrefix', () => {
+  it('extracts "- " from "- admit."', () => {
+    expect(admitPrefix('- admit.')).toBe('- ');
+  });
+
+  it('extracts "  + " from "  + admit."', () => {
+    expect(admitPrefix('  + admit.')).toBe('  + ');
+  });
+
+  it('extracts "    * " from nested bullet', () => {
+    expect(admitPrefix('    * admit.')).toBe('    * ');
+  });
+
+  it('returns empty for bare admit.', () => {
+    expect(admitPrefix('admit.')).toBe('');
+  });
+
+  it('returns empty for non-admit line', () => {
+    expect(admitPrefix('  reflexivity.')).toBe('');
+  });
+});
+
+describe('replace_admit preserves bullet', () => {
+  function replaceAdmitPreserve(text: string, line: number): string {
+    const lines = text.split('\n');
+    const prefix = admitPrefix(lines[line]);
+    const newLine = prefix ? prefix.trim() : '';
+    return applyTextEdits(text, [{
+      range: { start: { line, character: 0 }, end: { line: line + 1, character: 0 } },
+      newText: newLine ? `${newLine}\n` : '',
+    }]);
+  }
+
+  const proof = [
+    'Theorem foo : nat.',
+    'Proof.',
+    '  split.',
+    '  - reflexivity.',
+    '  - admit.',
+    'Admitted.',
+  ].join('\n');
+
+  it('keeps - bullet after removing admit', () => {
+    const admits = findAdmitLines(proof.split('\n'), 1, 5);
+    expect(admits).toHaveLength(1);
+    const after = replaceAdmitPreserve(proof, admits[0]);
+    expect(after).toContain('-');
+    expect(after).not.toContain('admit.');
+  });
+
+  it('next insert_tactic would land at bullet marker position', () => {
+    const admits = findAdmitLines(proof.split('\n'), 1, 5);
+    const after = replaceAdmitPreserve(proof, admits[0]);
+    const lines = after.split('\n');
+    const bulletLine = lines.findIndex(l => l.trim() === '-');
+    expect(bulletLine).toBeGreaterThan(0);
+    expect(lines[bulletLine].trim()).toBe('-');
   });
 });
