@@ -254,10 +254,22 @@ Lemma test_shift : True /\ True /\ True.
 Proof.
 split.
 - exact I.
-  admit.
+ admit.
+- split.
+  + admit.
+  + admit.
+Admitted.
+
+
+Lemma test_deep : (True /\ True) /\ (True /\ True).
+Proof.
+split.
 - split.
   + split.
-  admit.
+   admit.
+  + admit.
+- split.
+  + admit.
   + admit.
 Admitted.
 
