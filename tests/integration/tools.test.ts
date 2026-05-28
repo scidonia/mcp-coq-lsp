@@ -130,19 +130,38 @@ describe('snap_state / exec_tactic / state_goals', () => {
   // or use snap_state at the Proof. line and rely on petanque's prev-mode.
   // We use focus_proof to confirm the state and extract the proof line.
 
-  // basic.v (0-based): line 6 = "Proof.", line 7 = "Admitted." for 'trivial'
-  // Snap at line 6 char 6 (end of "Proof.") to get open-proof state before Admitted.
-  const PROOF_POS = { line: 6, character: 6 };
-
+  // Use open_goals to confirm position, then snap_state at the Proof. line.
+  // trivial: True — Proof. on line 6 (0-based), Admitted. on line 7.
+  // Snap at line 6, char 6 (end of "Proof.") to get the open-goal state.
+  // We use open_goals to get the valid state_id indirectly via snap_state.
   let stateId: number;
 
   beforeAll(async () => {
-    const snap = await h.callTool('snap_state', { file: BASIC, position: PROOF_POS });
+    // Find the Proof. line for 'trivial' by scanning basic.v
+    const content = fs.readFileSync(BASIC, 'utf8').split('\n');
+    const proofLineIdx = content.findIndex((l, i) =>
+      i > 0 && /^Proof\./.test(l) && /trivial/.test(content[i - 1] || '')
+    );
+    // Snap at end of "Proof." line to get open-proof state
+    const pos = { line: proofLineIdx, character: 6 };
+    const snap = await h.callTool('snap_state', { file: BASIC, position: pos });
     stateId = parseInt(snap.text.match(/state_id=(\d+)/)![1]);
+    // Verify we actually have a goal
+    const goals = await h.callTool('state_goals', { state_id: stateId });
+    // If no goals at this position, try char 0 of the Admitted. line (before it runs)
+    if (!goals.text.match(/1 goal/)) {
+      const admittedPos = { line: proofLineIdx + 1, character: 0 };
+      const snap2 = await h.callTool('snap_state', { file: BASIC, position: admittedPos });
+      stateId = parseInt(snap2.text.match(/state_id=(\d+)/)![1]);
+    }
   });
 
   it('snap_state returns a numeric state_id', async () => {
-    const r = await h.callTool('snap_state', { file: BASIC, position: PROOF_POS });
+    const content = fs.readFileSync(BASIC, 'utf8').split('\n');
+    const proofLineIdx = content.findIndex((l, i) =>
+      i > 0 && /^Proof\./.test(l) && /trivial/.test(content[i - 1] || '')
+    );
+    const r = await h.callTool('snap_state', { file: BASIC, position: { line: proofLineIdx, character: 6 } });
     expect(r.isError).toBe(false);
     expect(r.text).toMatch(/state_id=\d+/);
   });

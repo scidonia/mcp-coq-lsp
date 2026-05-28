@@ -2,7 +2,6 @@ Require Import Arith List.
 Import ListNotations.
 
 (** Basic fixture for integration tests *)
-
 Lemma trivial : True.
 Proof.
 Admitted.

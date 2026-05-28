@@ -1400,9 +1400,12 @@ async function main() {
             const targetLines: number[] = [];
             for (const line of admitLines) {
               try {
+                const lineText = docLines[line] || '';
+                const admitIdx = lineText.search(/\badmit\b/);
+                const character = admitIdx > 0 ? admitIdx - 1 : 0;
                 const stateR = await retryDocumentNotReady(() =>
                   lspClient.sendRequest<RunResult<number>>('petanque/get_state_at_pos', {
-                    uri: doc.uri, position: { line, character: 0 }, opts: { memo: false },
+                    uri: doc.uri, position: { line, character }, opts: { memo: false },
                   })
                 );
                 const goalsR = await lspClient.sendRequest<GoalConfig<string>>('petanque/goals', {
@@ -1423,9 +1426,15 @@ async function main() {
               async (line, currentText) => {
                 try {
                   const tempDoc = await docManager.updateDocument(file, currentText);
-                  const stateR = await lspClient.sendRequest<RunResult<number>>('petanque/get_state_at_pos', {
-                    uri: tempDoc.uri, position: { line, character: 0 }, opts: { memo: false },
-                  });
+                  // Snap just before 'admit' to get the pre-admit goal state.
+                  const lineText = currentText.split('\n')[line] || '';
+                  const admitIdx = lineText.search(/\badmit\b/);
+                  const character = admitIdx > 0 ? admitIdx - 1 : 0;
+                  const stateR = await retryDocumentNotReady(() =>
+                    lspClient.sendRequest<RunResult<number>>('petanque/get_state_at_pos', {
+                      uri: tempDoc.uri, position: { line, character }, opts: { memo: false },
+                    })
+                  );
                   const goalsR = await lspClient.sendRequest<GoalConfig<string>>('petanque/goals', {
                     st: stateR.st, opts: { compact: true },
                   });
@@ -1476,9 +1485,38 @@ async function main() {
               }
             } catch { /* best-effort */ }
 
+            // Auto-Qed: if no admit. lines remain in the proof, replace Admitted. → Qed.
+            let autoQedMsg = '';
+            try {
+              const currentDoc = docManager.getDocument(file)!;
+              const currentLines = currentDoc.text.split('\n');
+              const freshBounds = proofBounds(currentLines, name);
+              if (freshBounds) {
+                const remainingAdmits = findAdmitLines(currentLines, freshBounds.proofLine, freshBounds.endLine);
+                if (remainingAdmits.length === 0) {
+                  // All admits gone — close with Qed.
+                  const admittedLine = currentLines.findIndex(
+                    (l, i) => i > freshBounds.proofLine && /^\s*Admitted\./.test(l)
+                  );
+                  if (admittedLine >= 0) {
+                    const qedText = applyTextEdits(currentDoc.text, [{
+                      range: {
+                        start: { line: admittedLine, character: 0 },
+                        end:   { line: admittedLine + 1, character: 0 },
+                      },
+                      newText: 'Qed.\n',
+                    }]);
+                    await docManager.updateDocument(file, qedText);
+                    await docManager.saveDocument(file);
+                    autoQedMsg = ' — Qed applied';
+                  }
+                }
+              }
+            } catch { /* best-effort */ }
+
             const n = targetLines.length;
             return reply(
-              `${fileLine(file, targetLines[0])} — replaced ${n} admit(s) with "${tactic.trim()}"${sealMsg}`,
+              `${fileLine(file, targetLines[0])} — replaced ${n} admit(s) with "${tactic.trim()}"${sealMsg}${autoQedMsg}`,
               { applied: true, count: n }
             );
           }
@@ -2810,10 +2848,14 @@ async function main() {
           const admitted: Array<{ hash: string; line: number; goal: string }> = [];
           for (const line of admitLines) {
             try {
+              // Snap just before 'admit' to get the pre-admit goal state.
+              const lineText = docLines[line] || '';
+              const admitIdx = lineText.search(/\badmit\b/);
+              const character = admitIdx > 0 ? admitIdx - 1 : 0;
               const stateR = await retryDocumentNotReady(() =>
                 lspClient.sendRequest<RunResult<number>>('petanque/get_state_at_pos', {
                   uri: doc.uri,
-                  position: { line, character: 0 },
+                  position: { line, character },
                   opts: { memo: false },
                 })
               );
@@ -2848,10 +2890,13 @@ async function main() {
           let targetLine = -1;
           for (const line of admitLines) {
             try {
+              const lineText = docLines[line] || '';
+              const admitIdx = lineText.search(/\badmit\b/);
+              const character = admitIdx > 0 ? admitIdx - 1 : 0;
               const stateR = await retryDocumentNotReady(() =>
                 lspClient.sendRequest<RunResult<number>>('petanque/get_state_at_pos', {
                   uri: doc.uri,
-                  position: { line, character: 0 },
+                  position: { line, character },
                   opts: { memo: false },
                 })
               );
