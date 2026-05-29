@@ -1091,13 +1091,26 @@ async function main() {
           if (shelf.length > 0) parts.push(`  shelved: ${shelf.length}`);
           if (givenUp.length > 0) parts.push(`  given-up: ${givenUp.length}`);
 
-          // Formatted goals
-          if (goals.length > 0) {
-            const goalText = formatGoals(gc);
-            parts.push('');
-            parts.push(goalText);
-          } else {
-            parts.push('  (no goals at focus)');
+          // Admit hashes — compute first so we know whether to show full goals
+          const bounds = proofBounds(docLines, name);
+          const admitted = bounds ? await queryAdmitHashes(doc, docLines, bounds) : [];
+
+          // Show formatted goals when there are no tactic-level admits.
+          // The full formatted goal (with hypotheses) is most useful when the LLM
+          // needs to understand what to prove next. Once tactic-level admits exist,
+          // the admits section covers each goal; the full block is redundant noise.
+          // The root Admitted. alone (unstarted proof) still shows the full goal.
+          const hasTacticAdmits = bounds
+            ? findTacticAdmitLines(docLines, bounds.proofLine, bounds.endLine).length > 0
+            : false;
+          if (!hasTacticAdmits) {
+            if (goals.length > 0) {
+              const goalText = formatGoals(gc);
+              parts.push('');
+              parts.push(goalText);
+            } else {
+              parts.push('  (no goals at focus)');
+            }
           }
 
           // Proof script
@@ -1107,22 +1120,18 @@ async function main() {
             scriptLines.forEach(l => parts.push(`  ${l}`));
           }
 
-          // Admit hashes — included directly so LLM can go straight to insert_tactic
-          const bounds = proofBounds(docLines, name);
-          if (bounds) {
-            const admitted = await queryAdmitHashes(doc, docLines, bounds);
-            if (admitted.length > 0) {
-              parts.push('');
-              parts.push(`-- admits (${admitted.length}) ----------`);
-              admitted.forEach(a => {
-                const nGoals = a.goal ? a.goal.split(' | ').length : 1;
-                const isRootAdmitted = (docLines[a.line - 1] || '').trim() === 'Admitted.';
-                parts.push(`  ${a.hash}  L${a.line}: ${a.goal}`);
-                if (isRootAdmitted && nGoals > 1) {
-                  parts.push(`  ^ ${nGoals} focused goals — insert ${nGoals} bulleted admits (-) to address each individually, then use their hashes`);
-                }
-              });
-            }
+          // Admits section
+          if (admitted.length > 0) {
+            parts.push('');
+            parts.push(`-- admits (${admitted.length}) ----------`);
+            admitted.forEach(a => {
+              const nGoals = a.goal ? a.goal.split(' | ').length : 1;
+              const isRootAdmitted = (docLines[a.line - 1] || '').trim() === 'Admitted.';
+              parts.push(`  ${a.hash}  L${a.line}: ${a.goal}`);
+              if (isRootAdmitted && nGoals > 1) {
+                parts.push(`  ^ ${nGoals} focused goals — insert ${nGoals} bulleted admits (-) to address each individually, then use their hashes`);
+              }
+            });
           }
 
           const hint = nextHint(gc);
