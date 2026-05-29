@@ -1475,18 +1475,25 @@ async function main() {
             try {
               const freshDoc = docManager.getDocument(file)!;
               const firstLine = targetLines[0];
+              const docLines = finalText.split('\n');
+              const tacticLines = (tactic.match(/\n/g) || []).length + 1;
+              const tacticEndLine = firstLine + tacticLines - 1;
+              // Query goals at the END of the last tactic line (After mode) to
+              // see what goals remain directly after the tactic, not at the next bullet.
+              const tacticEndChar = (docLines[tacticEndLine] || '').length;
               const goalsR = await retryDocumentNotReady(() =>
                 lspClient.sendRequest<GoalAnswer<string>>('proof/goals', {
                   textDocument: { uri: freshDoc.uri, version: freshDoc.version },
-                  position: { line: firstLine + 1, character: 0 },
+                  position: { line: tacticEndLine, character: tacticEndChar },
                   pp_format: 'Str', mode: 'After',
                 })
               );
               const nF = goalsR?.goals?.goals?.length ?? 0;
+              const nBgAfter = (goalsR?.goals?.stack || []).reduce(
+                (s: number, [b, a]: any[]) => s + (b?.length || 0) + (a?.length || 0), 0
+              );
+              // Re-seal if the tactic left focused goals open at the tactic end position.
               if (nF > 0) {
-                const docLines = finalText.split('\n');
-                const tacticLines = (tactic.match(/\n/g) || []).length + 1;
-                const tacticEndLine = firstLine + tacticLines - 1;
                 const parentBulletLine = docLines[firstLine] || '';
                 const { text: sealed, sealMsg: msg } = sealOpenGoals(
                   finalText, tacticEndLine, nF, parentBulletLine

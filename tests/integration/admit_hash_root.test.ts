@@ -169,3 +169,67 @@ describe('auto-Qed must not fire with background goals remaining', () => {
     removeTempFixture(tmpFile);
   }, TIMEOUT);
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Regression: replacing a tactic-level admit. with a CLOSING tactic must NOT
+// re-seal with a new admit. — the bullet is done, no open goals remain.
+//
+// This guards against the bug where querying proof/goals at firstLine+1 returns
+// the next bullet's goal, causing a spurious re-seal after every admit_hash replace.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('admit_hash: closing tactic must not re-seal', () => {
+  it('replacing - admit. with a closing tactic produces no re-seal admit', async () => {
+    const tmpFile = tempFixture('basic.v', 'noseal');
+    await h.callTool('check_file', { file: tmpFile });
+
+    // has_admits: True /\ True with split. and two - admit. bullets
+    const focus = await h.callTool('focus_proof', { file: tmpFile, name: 'has_admits' });
+    const admits = extractAdmitHashes(focus.text);
+    // Should have 2 tactic-level admits
+    expect(admits.length).toBeGreaterThanOrEqual(2);
+
+    // Close first admit with a goal-closing tactic
+    const hash = admits[0].hash;
+    const r = await h.callTool('insert_tactic', {
+      file: tmpFile,
+      name: 'has_admits',
+      tactic: 'exact I.',
+      admit_hash: hash,
+    });
+    expect(r.isError).toBe(false);
+
+    // Must NOT say "sealed with admit" — the tactic closed the goal
+    expect(r.text).not.toMatch(/sealed with admit/i);
+
+    // File must not have inserted a spurious admit. after the tactic
+    const content = fs.readFileSync(tmpFile, 'utf8');
+    // The replaced bullet should be "- exact I." with no admit. following it on the next line
+    expect(content).not.toMatch(/- exact I\.\n\s+admit\./);
+
+    removeTempFixture(tmpFile);
+  }, TIMEOUT);
+
+  it('replacing - admit. with a non-closing tactic (split.) DOES re-seal', async () => {
+    const tmpFile = tempFixture('nested_conj.v', 'doseal');
+    await h.callTool('check_file', { file: tmpFile });
+
+    // nested_conj: (True /\ True) /\ (True /\ True) with two - admit. bullets
+    const focus = await h.callTool('focus_proof', { file: tmpFile, name: 'nested_conj' });
+    const hash = extractAdmitHashes(focus.text)[0]?.hash;
+    expect(hash).toBeTruthy();
+
+    const r = await h.callTool('insert_tactic', {
+      file: tmpFile,
+      name: 'nested_conj',
+      tactic: 'split.',
+      admit_hash: hash,
+    });
+    expect(r.isError).toBe(false);
+
+    // split. on True /\ True leaves 2 open goals — MUST re-seal
+    expect(r.text).toMatch(/sealed with/i);
+
+    removeTempFixture(tmpFile);
+  }, TIMEOUT);
+});
