@@ -152,6 +152,40 @@ export function proofBounds(lines: string[], proofName: string): { proofLine: nu
 }
 
 /**
+ * Compute the LSP snap position for querying the goal state at a given admit line.
+ *
+ * For tactic-level `admit.`: snap just before the `admit` keyword on that line.
+ * For the root `Admitted.`: snap at the end of the last non-blank tactic line
+ * above it (so we get the goal state after all preceding tactics).
+ *
+ * Returns { snapLine, snapChar }.
+ */
+export function admitSnapPosition(
+  lines: string[],
+  admitLineIdx: number,
+  proofLine: number,
+): { snapLine: number; snapChar: number } {
+  const lineText = lines[admitLineIdx] || '';
+  const isRootAdmitted = lineText.trim() === 'Admitted.';
+
+  if (isRootAdmitted) {
+    // Walk back to find the last non-blank non-Proof. line
+    for (let i = admitLineIdx - 1; i > proofLine; i--) {
+      const t = (lines[i] || '').trim();
+      if (t !== '' && t !== 'Proof.') {
+        return { snapLine: i, snapChar: (lines[i] || '').length };
+      }
+    }
+    // No prior tactic — snap at end of Proof. line
+    return { snapLine: proofLine, snapChar: (lines[proofLine] || '').length };
+  }
+
+  // Tactic-level admit. — snap just before 'admit'
+  const admitIdx = lineText.search(/\badmit\b/);
+  return { snapLine: admitLineIdx, snapChar: admitIdx > 0 ? admitIdx - 1 : 0 };
+}
+
+/**
  * Find all addressable admit positions within a proof body.
  *
  * Tactic-level `admit.` lines are always included.

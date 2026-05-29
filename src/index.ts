@@ -16,7 +16,7 @@ import {
 import { RocqLspClient } from './lsp-client.js';
 import { DocumentManager, applyTextEdits } from './document-manager.js';
 import { detectProjectConfig, mergeProjectArgs, findProjectRoot } from './project-config.js';
-import { isSkipLine, isProofEndLine, isTopLevelLine, autoAdvancePosition, insertPosition, findProofLine, computeBulletIndent, proofBounds, findAdmitLines, findTacticAdmitLines, bulletInsertPos, admitPrefix, replaceAdmitLine, replaceAllMatchingAdmits, nextChildBullet, sealOpenGoals, applyAutoQed } from './coq-utils.js';
+import { isSkipLine, isProofEndLine, isTopLevelLine, autoAdvancePosition, insertPosition, findProofLine, computeBulletIndent, proofBounds, findAdmitLines, findTacticAdmitLines, admitSnapPosition, bulletInsertPos, admitPrefix, replaceAdmitLine, replaceAllMatchingAdmits, nextChildBullet, sealOpenGoals, applyAutoQed } from './coq-utils.js';
 import type {
   Position,
   Range,
@@ -921,24 +921,7 @@ async function main() {
     const admitted: Array<{ hash: string; line: number; goal: string }> = [];
     for (const line of admitLineNums) {
       try {
-        const lineText = docLines[line] || '';
-        const isRootAdmitted = lineText.trim() === 'Admitted.';
-        let snapLine = line, snapChar = 0;
-        if (isRootAdmitted) {
-          for (let i = line - 1; i > bounds.proofLine; i--) {
-            const t = (docLines[i] || '').trim();
-            if (t !== '' && t !== 'Proof.') {
-              snapLine = i; snapChar = (docLines[i] || '').length; break;
-            }
-          }
-          if (snapLine === line) {
-            snapLine = bounds.proofLine;
-            snapChar = (docLines[bounds.proofLine] || '').length;
-          }
-        } else {
-          const admitIdx = lineText.search(/\badmit\b/);
-          snapChar = admitIdx > 0 ? admitIdx - 1 : 0;
-        }
+        const { snapLine, snapChar } = admitSnapPosition(docLines, line, bounds.proofLine);
         const stateR = await retryDocumentNotReady(() =>
           lspClient.sendRequest<RunResult<number>>('petanque/get_state_at_pos', {
             uri: doc.uri, position: { line: snapLine, character: snapChar }, opts: { memo: false },
@@ -1431,12 +1414,10 @@ async function main() {
             const targetLines: number[] = [];
             for (const line of admitLines) {
               try {
-                const lineText = docLines[line] || '';
-                const admitIdx = lineText.search(/\badmit\b/);
-                const character = admitIdx > 0 ? admitIdx - 1 : 0;
+                const { snapLine, snapChar } = admitSnapPosition(docLines, line, bounds.proofLine);
                 const stateR = await retryDocumentNotReady(() =>
                   lspClient.sendRequest<RunResult<number>>('petanque/get_state_at_pos', {
-                    uri: doc.uri, position: { line, character }, opts: { memo: false },
+                    uri: doc.uri, position: { line: snapLine, character: snapChar }, opts: { memo: false },
                   })
                 );
                 const goalsR = await lspClient.sendRequest<GoalConfig<string>>('petanque/goals', {
@@ -1457,13 +1438,14 @@ async function main() {
               async (line, currentText) => {
                 try {
                   const tempDoc = await docManager.updateDocument(file, currentText);
-                  // Snap just before 'admit' to get the pre-admit goal state.
-                  const lineText = currentText.split('\n')[line] || '';
-                  const admitIdx = lineText.search(/\badmit\b/);
-                  const character = admitIdx > 0 ? admitIdx - 1 : 0;
+                  const currentLines = currentText.split('\n');
+                  const currentBounds = proofBounds(currentLines, name);
+                  const { snapLine, snapChar } = admitSnapPosition(
+                    currentLines, line, currentBounds?.proofLine ?? 0
+                  );
                   const stateR = await retryDocumentNotReady(() =>
                     lspClient.sendRequest<RunResult<number>>('petanque/get_state_at_pos', {
-                      uri: tempDoc.uri, position: { line, character }, opts: { memo: false },
+                      uri: tempDoc.uri, position: { line: snapLine, character: snapChar }, opts: { memo: false },
                     })
                   );
                   const goalsR = await lspClient.sendRequest<GoalConfig<string>>('petanque/goals', {

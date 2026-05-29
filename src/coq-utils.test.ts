@@ -6,6 +6,7 @@ import {
   admitPrefix, bulletInsertPos, replaceAdmitLine,
   replaceAllMatchingAdmits,
   nextChildBullet, sealOpenGoals, applyAutoQed,
+  admitSnapPosition,
 } from './coq-utils.js';
 import { applyTextEdits } from './document-manager.js';
 
@@ -1239,5 +1240,75 @@ describe('applyAutoQed', () => {
     const { text: out, applied } = applyAutoQed(text, 'foo');
     expect(applied).toBe(false);
     expect(out).toBe(text);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// admitSnapPosition — consistent snap for both queryAdmitHashes and
+// admit_hash path so hashes always agree
+// ═══════════════════════════════════════════════════════════════════
+
+describe('admitSnapPosition', () => {
+  it('tactic admit. — snaps just before "admit" on the same line', () => {
+    const lines = [
+      'Lemma foo : True.',
+      'Proof.',
+      '  - admit.',
+      'Admitted.',
+    ];
+    const { snapLine, snapChar } = admitSnapPosition(lines, 2, 1);
+    expect(snapLine).toBe(2);
+    // "  - admit." — 'admit' is at index 4, so snapChar = 3
+    expect(snapChar).toBe(3);
+  });
+
+  it('tactic admit at column 0 — snapChar is 0', () => {
+    const lines = [
+      'Lemma foo : True.',
+      'Proof.',
+      'admit.',
+      'Admitted.',
+    ];
+    const { snapLine, snapChar } = admitSnapPosition(lines, 2, 1);
+    expect(snapLine).toBe(2);
+    expect(snapChar).toBe(0);
+  });
+
+  it('root Admitted. with prior tactic — snaps at end of that tactic line', () => {
+    const lines = [
+      'Lemma foo : True.',
+      'Proof.',
+      '  induction n.',
+      'Admitted.',
+    ];
+    const { snapLine, snapChar } = admitSnapPosition(lines, 3, 1);
+    // Should snap at end of "  induction n." (line 2)
+    expect(snapLine).toBe(2);
+    expect(snapChar).toBe('  induction n.'.length);
+  });
+
+  it('root Admitted. with no prior tactic — snaps at end of Proof. line', () => {
+    const lines = [
+      'Lemma foo : True.',
+      'Proof.',
+      'Admitted.',
+    ];
+    const { snapLine, snapChar } = admitSnapPosition(lines, 2, 1);
+    // No tactic before Admitted. — snap at end of Proof. line
+    expect(snapLine).toBe(1);
+    expect(snapChar).toBe('Proof.'.length);
+  });
+
+  it('root Admitted. skips blank lines to find last tactic', () => {
+    const lines = [
+      'Lemma foo : True.',
+      'Proof.',
+      '  intro n.',
+      '',
+      'Admitted.',
+    ];
+    const { snapLine, snapChar } = admitSnapPosition(lines, 4, 1);
+    expect(snapLine).toBe(2);
+    expect(snapChar).toBe('  intro n.'.length);
   });
 });
