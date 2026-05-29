@@ -1614,8 +1614,11 @@ async function main() {
               const parentIndent = findLastBulletIndent(docLines, insPos.line, proofLine, lspBulletChar)
                 ?? computeBulletIndent(doc.text, insPos, proofLine).length;
               indent = ' '.repeat(parentIndent + 2);
-            } else if (!lspBullet && totalRemaining > 1) {
-              // First bullet group in a proof branch.
+            } else if (!lspBullet && totalRemaining > 1 && !hasBullet && computeBulletIndent(doc.text, insPos, proofLine)) {
+              // Inside an existing bullet structure with no active bullet context —
+              // auto-open the next sibling. Only fires if there are already bullet
+              // lines in the proof body (computeBulletIndent returns non-empty).
+              // Does NOT fire at the top level of a fresh proof (no prior bullets).
               bullet = '-';
               indent = '';
             } else if (atLineStart) {

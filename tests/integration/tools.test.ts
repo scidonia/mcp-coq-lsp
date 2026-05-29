@@ -614,6 +614,103 @@ describe('insert_tactic admit_hash re-seal', () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Regression: auto-bullet must NOT fire at top level (no prior bullet context)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('auto-bullet suppression at top-level proof', () => {
+  // After "split." there are 2 goals but no bullet structure yet.
+  // insert_tactic must NOT auto-prepend "- " to the next plain tactic,
+  // even though totalRemaining > 1. The user is driving bullets explicitly.
+
+  it('plain tactic after split. is not auto-prefixed with a bullet', async () => {
+    const tmpFile = tempFixture('triple_conj.v', 'autobullet');
+    await h.callTool('check_file', { file: tmpFile });
+
+    // Step 1: split. at top level — should insert verbatim, no bullet
+    const r1 = await h.callTool('insert_tactic', { file: tmpFile, name: 'triple_conj', tactic: 'split.' });
+    expect(r1.isError).toBe(false);
+    expect(r1.text).toMatch(/2 goal/);
+    expect(fs.readFileSync(tmpFile, 'utf8')).not.toMatch(/- split\./);
+
+    // Step 2: second plain split. — must NOT be auto-prefixed as "- split."
+    // This is the regression: totalRemaining > 1 and no lspBullet, but user
+    // has not started a bullet structure so we must not inject one.
+    const r2 = await h.callTool('insert_tactic', { file: tmpFile, name: 'triple_conj', tactic: 'split.' });
+    expect(r2.isError).toBe(false);
+    const content = fs.readFileSync(tmpFile, 'utf8');
+    // Both split. calls must be plain — no auto "- " prefix on either
+    const lines = content.split('\n').filter(l => l.match(/split\./));
+    expect(lines.every(l => !l.match(/^\s*-\s+split\.|^\s*\+\s+split\.|^\s*\*\s+split\./))).toBe(true);
+
+    removeTempFixture(tmpFile);
+  }, TIMEOUT);
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// triple_conj: nested bullet proof using insert_tactic with explicit bullets
+// Goal: ((True /\ True) /\ True) /\ (True /\ True)
+// Proof script built:
+//   split.
+//   - split.
+//     + split; exact I.
+//     + exact I.
+//   - split; exact I.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('triple_conj nested bullet proof via insert_tactic', () => {
+  let tmpFile: string;
+
+  beforeAll(async () => {
+    tmpFile = tempFixture('triple_conj.v', 'triple');
+    await h.callTool('check_file', { file: tmpFile });
+  });
+
+  afterAll(() => removeTempFixture(tmpFile));
+
+  it('split. opens 2 top-level goals', async () => {
+    const r = await h.callTool('insert_tactic', { file: tmpFile, name: 'triple_conj', tactic: 'split.' });
+    expect(r.isError).toBe(false);
+    expect(r.text).toMatch(/2 goal/);
+  }, TIMEOUT);
+
+  it('- split. opens sub-goals inside bullet 1', async () => {
+    const r = await h.callTool('insert_tactic', { file: tmpFile, name: 'triple_conj', tactic: '- split.' });
+    expect(r.isError).toBe(false);
+    expect(r.text).toMatch(/2.*focus|2 goal/i);
+    expect(r.text).toMatch(/background/);
+  }, TIMEOUT);
+
+  it('+ split; exact I. closes the True /\\ True sub-bullet', async () => {
+    const r = await h.callTool('insert_tactic', { file: tmpFile, name: 'triple_conj', tactic: '+ split; exact I.' });
+    expect(r.isError).toBe(false);
+    expect(r.text).toMatch(/bullet closed/i);
+  }, TIMEOUT);
+
+  it('+ exact I. closes the True sub-bullet', async () => {
+    const r = await h.callTool('insert_tactic', { file: tmpFile, name: 'triple_conj', tactic: '+ exact I.' });
+    expect(r.isError).toBe(false);
+    expect(r.text).toMatch(/bullet closed/i);
+  }, TIMEOUT);
+
+  it('- split; exact I. closes bullet 2 and applies Qed', async () => {
+    const r = await h.callTool('insert_tactic', { file: tmpFile, name: 'triple_conj', tactic: '- split; exact I.' });
+    expect(r.isError).toBe(false);
+    expect(r.text).toMatch(/Qed applied/i);
+  }, TIMEOUT);
+
+  it('file ends with Qed and no Admitted', async () => {
+    const content = fs.readFileSync(tmpFile, 'utf8');
+    expect(content).toContain('Qed.');
+    expect(content).not.toMatch(/Admitted\./);
+    // Verify bullet structure is correct
+    expect(content).toMatch(/- split\./);
+    expect(content).toMatch(/\+ split; exact I\./);
+    expect(content).toMatch(/\+ exact I\./);
+    expect(content).toMatch(/- split; exact I\./);
+  }, TIMEOUT);
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // deep_conj: admit → split → admit sub-bullets → close one by one
 // ─────────────────────────────────────────────────────────────────────────────
 
