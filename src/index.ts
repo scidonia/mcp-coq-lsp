@@ -1406,7 +1406,9 @@ async function main() {
 
           // If admit_hash is provided, find and replace the admit with the new tactic
           if (admit_hash) {
-            const docLines = doc.text.split('\n');
+            // Re-fetch doc to ensure we have the latest version from disk
+            const freshDoc = await ensureDocumentOpened(file);
+            const docLines = freshDoc.text.split('\n');
             const bounds = proofBounds(docLines, name);
             if (!bounds) throw new Error(`Proof not found: "${name}"`);
             const admitLines = findAdmitLines(docLines, bounds.proofLine, bounds.endLine);
@@ -1417,7 +1419,7 @@ async function main() {
                 const { snapLine, snapChar } = admitSnapPosition(docLines, line, bounds.proofLine);
                 const stateR = await retryDocumentNotReady(() =>
                   lspClient.sendRequest<RunResult<number>>('petanque/get_state_at_pos', {
-                    uri: doc.uri, position: { line: snapLine, character: snapChar }, opts: { memo: false },
+                    uri: freshDoc.uri, position: { line: snapLine, character: snapChar }, opts: { memo: false },
                   })
                 );
                 const goalsR = await lspClient.sendRequest<GoalConfig<string>>('petanque/goals', {
@@ -1432,9 +1434,9 @@ async function main() {
 
             // Apply tactic to ALL matching admits using shared replaceAllMatchingAdmits.
             // getGoalText calls the LSP — same function as focus_proof admits section uses.
-            pushFileHistory(file, doc.text, null);
+            pushFileHistory(file, freshDoc.text, null);
             const { text: finalText, count: totalReplaced } = await replaceAllMatchingAdmits(
-              doc.text, name, tactic, admit_hash,
+              freshDoc.text, name, tactic, admit_hash,
               async (line, currentText) => {
                 try {
                   const tempDoc = await docManager.updateDocument(file, currentText);
@@ -1497,11 +1499,37 @@ async function main() {
 
             try {
               const currentDoc = docManager.getDocument(file)!;
-              const { text: qedText, applied } = applyAutoQed(currentDoc.text, name);
-              if (applied) {
-                await docManager.updateDocument(file, qedText);
-                await docManager.saveDocument(file);
-                autoQedMsg = ' — Qed applied';
+              const currentLines = currentDoc.text.split('\n');
+              const currentBounds = proofBounds(currentLines, name);
+              // Before auto-Qed, check there are no focused goals remaining at Admitted.
+              // applyAutoQed only checks for tactic-level admit. lines, not focused goals.
+              let hasFocusedGoals = false;
+              if (currentBounds) {
+                const admittedLine = currentBounds.endLine;
+                if (currentLines[admittedLine]?.trim() === 'Admitted.') {
+                  try {
+                    const { snapLine: sl, snapChar: sc } = admitSnapPosition(
+                      currentLines, admittedLine, currentBounds.proofLine
+                    );
+                    const sR = await retryDocumentNotReady(() =>
+                      lspClient.sendRequest<RunResult<number>>('petanque/get_state_at_pos', {
+                        uri: currentDoc.uri, position: { line: sl, character: sc }, opts: { memo: false },
+                      })
+                    );
+                    const gR = await lspClient.sendRequest<GoalConfig<string>>('petanque/goals', {
+                      st: sR.st, opts: { compact: true },
+                    });
+                    hasFocusedGoals = (gR.goals?.length ?? 0) > 0;
+                  } catch {}
+                }
+              }
+              if (!hasFocusedGoals) {
+                const { text: qedText, applied } = applyAutoQed(currentDoc.text, name);
+                if (applied) {
+                  await docManager.updateDocument(file, qedText);
+                  await docManager.saveDocument(file);
+                  autoQedMsg = ' — Qed applied';
+                }
               }
             } catch { /* best-effort */ }
 

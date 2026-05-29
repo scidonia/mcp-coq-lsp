@@ -114,12 +114,4 @@ Theorem preservation : forall t t' T,
   has_type t' T.
 Proof.
 intros t t' T Hty Hstep. revert T Hty. induction Hstep.
-- intro T; intro H; inversion H; subst; apply T_Succ; apply IHHstep; assumption.
-- intro T; intro H; inversion H; subst; apply T_Cons; [apply IHHstep; assumption | assumption].
-- intro T; intro Hty; inversion Hty; subst; eapply T_Cons; [eassumption | apply IHHstep; eassumption].
-- intro T; intro H; inversion H; subst; eapply T_Head; apply IHHstep; eassumption.
-- intro T; intro H; inversion H; subst; eapply T_Tail; apply IHHstep; eassumption.
-- intros T Hty; inversion Hty; subst; inversion H2; subst; assumption.
-- intros T Hty; inversion Hty; subst; inversion H2; subst; assumption.
-
 Qed.
