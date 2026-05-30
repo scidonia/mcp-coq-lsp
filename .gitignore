@@ -11,6 +11,9 @@ result
 # Python
 **/__pycache__/
 
+# Integration test temp fixtures
+test*/integration/fixtures/_tmp_*.v
+
 # Coq/Rocq build artifacts
 *.glob
 *.vo
