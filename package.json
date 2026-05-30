@@ -1,6 +1,6 @@
 {
   "name": "rocq-piler",
-  "version": "0.7.0",
+  "version": "0.7.1",
   "description": "MCP server for Rocq proof assistant integration via rocq-lsp - your AI companion for theorem proving",
   "type": "module",
   "main": "dist/index.js",
